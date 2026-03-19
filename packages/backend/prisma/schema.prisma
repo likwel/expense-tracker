@@ -1,0 +1,149 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 Int                @id @default(autoincrement())
+  name               String             @db.VarChar(100)
+  email              String             @unique @db.VarChar(150)
+  password           String             @db.VarChar(255)
+  currency           String             @default("MGA") @db.VarChar(10)
+  createdAt          DateTime           @default(now()) @map("created_at")
+  expenses           Expense[]
+  incomes            Income[]
+  budgets            Budget[]
+  categories         Category[]
+  recurringExpenses  RecurringExpense[]
+  recurringIncomes   RecurringIncome[]  // ← nouveau
+
+  @@map("users")
+}
+
+model Category {
+  id                Int                @id @default(autoincrement())
+  userId            Int?               @map("user_id")
+  name              String             @db.VarChar(100)
+  icon              String?            @db.VarChar(50)
+  color             String?            @db.VarChar(20)
+  type              String
+  user              User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expenses          Expense[]
+  incomes           Income[]
+  budgets           Budget[]
+  recurringExpenses RecurringExpense[]
+  recurringIncomes  RecurringIncome[]  // ← nouveau
+
+  @@map("categories")
+}
+
+model Expense {
+  id                 Int               @id @default(autoincrement())
+  userId             Int               @map("user_id")
+  categoryId         Int?              @map("category_id")
+  recurringExpenseId Int?              @map("recurring_expense_id")
+  amount             Decimal           @db.Decimal(15, 2)
+  description        String?
+  date               DateTime          @db.Date
+  isRecurring        Boolean           @default(false) @map("is_recurring")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category           Category?         @relation(fields: [categoryId], references: [id])
+  recurringExpense   RecurringExpense? @relation("RecurringExpense", fields: [recurringExpenseId], references: [id])
+
+  @@index([userId, date])
+  @@map("expenses")
+}
+
+model Income {
+  id                Int              @id @default(autoincrement())
+  userId            Int              @map("user_id")
+  categoryId        Int?             @map("category_id")
+  recurringIncomeId Int?             @map("recurring_income_id")
+  amount            Decimal          @db.Decimal(15, 2)
+  description       String?
+  date              DateTime         @db.Date
+  isRecurring       Boolean          @default(false) @map("is_recurring")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category          Category?        @relation(fields: [categoryId], references: [id])
+  recurringIncome   RecurringIncome? @relation("RecurringIncome", fields: [recurringIncomeId], references: [id])
+
+  @@index([userId, date])
+  @@map("incomes")
+}
+
+model Budget {
+  id         Int       @id @default(autoincrement())
+  userId     Int       @map("user_id")
+  categoryId Int?      @map("category_id")
+  amount     Decimal   @db.Decimal(15, 2)
+  month      Int
+  year       Int
+  createdAt  DateTime  @default(now()) @map("created_at")
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category   Category? @relation(fields: [categoryId], references: [id])
+
+  @@unique([userId, categoryId, month, year])
+  @@index([userId, year, month])
+  @@map("budgets")
+}
+
+model RecurringExpense {
+  id                Int       @id @default(autoincrement())
+  userId            Int       @map("user_id")
+  categoryId        Int?      @map("category_id")
+  amount            Decimal   @db.Decimal(15, 2)
+  description       String?
+  frequency         String    // 'daily' | 'weekly' | 'monthly'
+  dayOfMonth        Int?      @map("day_of_month")
+  dayOfWeek         Int?      @map("day_of_week")
+  dayType           String    @default("all") @map("day_type") // 'all' | 'working' | 'holiday'
+  startDate         DateTime  @db.Date @map("start_date")
+  endDate           DateTime? @db.Date @map("end_date")
+  isActive          Boolean   @default(true) @map("is_active")
+  lastRunAt         DateTime? @map("last_run_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category          Category? @relation(fields: [categoryId], references: [id])
+  generatedExpenses Expense[] @relation("RecurringExpense")
+
+  @@index([userId, isActive])
+  @@map("recurring_expenses")
+}
+
+model RecurringIncome {
+  id               Int       @id @default(autoincrement())
+  userId           Int       @map("user_id")
+  categoryId       Int?      @map("category_id")
+  amount           Decimal   @db.Decimal(15, 2)
+  description      String?
+  frequency        String    // 'daily' | 'weekly' | 'monthly'
+  dayOfMonth       Int?      @map("day_of_month")
+  dayOfWeek        Int?      @map("day_of_week")
+  dayType          String    @default("all") @map("day_type")
+  startDate        DateTime  @db.Date @map("start_date")
+  endDate          DateTime? @db.Date @map("end_date")
+  isActive         Boolean   @default(true) @map("is_active")
+  lastRunAt        DateTime? @map("last_run_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category         Category? @relation(fields: [categoryId], references: [id])
+  generatedIncomes Income[]  @relation("RecurringIncome")
+
+  @@index([userId, isActive])
+  @@map("recurring_incomes")
+}
+
+model PublicHoliday {
+  id          Int      @id @default(autoincrement())
+  date        DateTime @db.Date @unique
+  name        String   @db.VarChar(100)
+  country     String   @default("MG") @db.VarChar(5)
+
+  @@map("public_holidays")
+}

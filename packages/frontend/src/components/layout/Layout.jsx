@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useState } from 'react'
 import {
   LayoutDashboard, TrendingDown, TrendingUp,
@@ -6,14 +6,13 @@ import {
 } from 'lucide-react'
 
 const NAV = [
-  { to:'/',         Icon:LayoutDashboard, label:'Accueil'  },
+  { to:'/dashboard',         Icon:LayoutDashboard, label:'Accueil'  },
   { to:'/expenses', Icon:TrendingDown,    label:'Dépenses' },
   { to:'/incomes',  Icon:TrendingUp,      label:'Revenus'  },
   { to:'/budgets',  Icon:Target,          label:'Budget'   },
   { to:'/reports',  Icon:BarChart2,       label:'Rapports' },
 ]
 
-// Sous-menu qui s'ouvre depuis "Dépenses"
 const EXPENSES_SUBMENU = [
   { to:'/expenses',  Icon:TrendingDown, label:'Dépenses ponctuelles' },
   { to:'/recurring', Icon:RefreshCw,    label:'Dépenses récurrentes' },
@@ -22,16 +21,14 @@ const EXPENSES_SUBMENU = [
 export default function Layout() {
   const [subMenu, setSubMenu] = useState(false)
   const navigate = useNavigate()
+  const location = useLocation() // ✅ déplacé à l'intérieur du composant
 
-  const handleExpensesClick = (e, isActive) => {
-    // Si déjà sur /expenses ou /recurring → ouvrir/fermer le sous-menu
-    // Sinon naviguer vers /expenses
-    e.preventDefault()
-    setSubMenu(v => !v)
-  }
+  const isExpensesActive =
+    location.pathname === '/expenses' ||
+    location.pathname === '/recurring'
 
   return (
-    <div style={{ maxWidth:480, margin:'0 auto', minHeight:'100vh', paddingBottom:72 }}>
+    <div style={{ maxWidth:1025, margin:'0 auto', minHeight:'100vh', paddingBottom:72 }}>
       <Outlet/>
 
       {/* Overlay sous-menu */}
@@ -79,7 +76,7 @@ export default function Layout() {
               <div>
                 <div style={{ fontWeight:600, fontSize:14, color:'#222' }}>{label}</div>
                 <div style={{ fontSize:11, color:'#aaa', marginTop:1 }}>
-                  {to === '/expenses'  ? 'Dépenses ponctuelles et journalières' : 'Mensuel, hebdo, jours ouvrés...'}
+                  {to === '/expenses' ? 'Dépenses ponctuelles et journalières' : 'Mensuel, hebdo, jours ouvrés...'}
                 </div>
               </div>
             </button>
@@ -95,7 +92,6 @@ export default function Layout() {
         display:'flex', zIndex:20,
       }}>
         {NAV.map(({ to, Icon, label }) => {
-          // Bouton Dépenses → ouvre le sous-menu
           if (to === '/expenses') {
             return (
               <button key={to}
@@ -103,14 +99,13 @@ export default function Layout() {
                 style={{
                   flex:1, display:'flex', flexDirection:'column', alignItems:'center',
                   padding:'10px 0 8px', border:'none', background:'none', cursor:'pointer',
-                  color: subMenu ? '#6C5CE7' : '#bbb', gap:3,
+                  color: (subMenu || isExpensesActive) ? '#6C5CE7' : '#bbb', gap:3,
                 }}>
                 <Icon size={20} strokeWidth={1.8}/>
-                <span style={{ fontSize:9, fontWeight: subMenu ? 700 : 400 }}>{label}</span>
+                <span style={{ fontSize:9, fontWeight: (subMenu || isExpensesActive) ? 700 : 400 }}>{label}</span>
               </button>
             )
           }
-          // Autres items normaux
           return (
             <NavLink key={to} to={to} end={to==='/'} style={({ isActive }) => ({
               flex:1, display:'flex', flexDirection:'column', alignItems:'center',

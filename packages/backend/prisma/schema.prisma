@@ -7,19 +7,31 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Ajouter ces champs au model User existant
+
 model User {
   id                 Int                @id @default(autoincrement())
   name               String             @db.VarChar(100)
   email              String             @unique @db.VarChar(150)
   password           String             @db.VarChar(255)
   currency           String             @default("MGA") @db.VarChar(10)
+
+  // ── Plan & abonnement ──────────────────────────────────────
+  plan               String             @default("free") @db.VarChar(20) // 'free' | 'pro' | 'business'
+  trialStartAt       DateTime?          @map("trial_start_at")
+  trialEndAt         DateTime?          @map("trial_end_at")
+  planStartAt        DateTime?          @map("plan_start_at")
+  planEndAt          DateTime?          @map("plan_end_at")   // null = actif indéfiniment
+  // ──────────────────────────────────────────────────────────
+
   createdAt          DateTime           @default(now()) @map("created_at")
   expenses           Expense[]
   incomes            Income[]
   budgets            Budget[]
   categories         Category[]
   recurringExpenses  RecurringExpense[]
-  recurringIncomes   RecurringIncome[]  // ← nouveau
+  recurringIncomes   RecurringIncome[]
+  notifications Notification[]
 
   @@map("users")
 }
@@ -146,4 +158,24 @@ model PublicHoliday {
   country     String   @default("MG") @db.VarChar(5)
 
   @@map("public_holidays")
+}
+
+// Ajouter dans schema.prisma
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  type      String   @db.VarChar(50)   // 'budget_alert' | 'income_generated' | 'recurring_generated'
+  level     String   @db.VarChar(20)   // 'danger' | 'warning' | 'alert' | 'success' | 'info'
+  title     String   @db.VarChar(200)
+  message   String?
+  data      Json?                       // payload complet (amount, pct, category...)
+  isRead    Boolean  @default(false)   @map("is_read")
+  dedupKey  String?  @unique @db.VarChar(200) @map("dedup_key")
+  createdAt DateTime @default(now())   @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@map("notifications")
 }

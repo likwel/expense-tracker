@@ -4,6 +4,15 @@ const prisma   = require('../config/prisma')
 const auth     = require('../middleware/auth')
 const validate = require('../middleware/validate')
 
+// ── Import SSE — sécurisé avec fallback si module pas encore chargé ──
+let emitToUser = () => {}   // fallback no-op par défaut
+try {
+  const sse = require('./sse')
+  if (typeof sse.emitToUser === 'function') emitToUser = sse.emitToUser
+} catch {}
+
+const { checkAndNotifyBudgets } = require('../services/budgetNotif')
+
 router.use(auth)
 
 const schema = Joi.object({
@@ -38,6 +47,16 @@ router.post('/', validate(schema), async (req, res) => {
       data:    { ...req.body, userId: req.user.id, date: new Date(req.body.date) },
       include: catSelect,
     })
+
+    // Vérifier les budgets — sans prisma en paramètre (importé dans le service)
+    const date = new Date(req.body.date)
+    await checkAndNotifyBudgets(
+      req.user.id,
+      date.getMonth() + 1,
+      date.getFullYear(),
+      emitToUser            // ← 4 paramètres uniquement
+    ).catch(e => console.error('[Budget notif]', e.message))
+
     res.status(201).json(row)
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
@@ -55,7 +74,9 @@ router.put('/:id', validate(schema), async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
-    const row = await prisma.expense.deleteMany({ where: { id: Number(req.params.id), userId: req.user.id } })
+    const row = await prisma.expense.deleteMany({
+      where: { id: Number(req.params.id), userId: req.user.id },
+    })
     if (!row.count) return res.status(404).json({ error: 'Non trouvé' })
     res.json({ success: true })
   } catch (e) { res.status(500).json({ error: e.message }) }

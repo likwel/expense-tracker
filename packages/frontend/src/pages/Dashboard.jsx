@@ -3,7 +3,7 @@ import { ArrowDownCircle, ArrowUpCircle, ChevronRight, Wallet, RefreshCw } from 
 import { useNavigate } from 'react-router-dom'
 import Header          from '../components/layout/Header'
 import Card            from '../components/ui/Card'
-import { fmt, MONTHS } from '../utils/format'
+import { fmt, MONTHS, MONTHS_SM } from '../utils/format'
 import { useApi }      from '../hooks/useApi'
 import { recurringExpensesApi, recurringIncomesApi } from '../services/api'
 
@@ -461,7 +461,7 @@ export default function Dashboard() {
                       <rect x={x + bw + gap} y={100-he} width={bw} height={he}
                         fill="#e74c3c" rx={3} opacity={0.85} />
                       <text x={x + bw} y={115} textAnchor="middle"
-                        fontSize={8} fill="#bbb">{MONTHS[i]}</text>
+                        fontSize={8} fill="#bbb">{MONTHS_SM[i]}</text>
                     </g>
                   )
                 })

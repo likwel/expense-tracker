@@ -6,6 +6,7 @@ import Button  from '../components/ui/Button'
 import { fmt, pct, MONTHS } from '../utils/format'
 import { useApi }     from '../hooks/useApi'
 import { reportsApi } from '../services/api'
+import MonthPicker from '../components/ui/MonthPicker'
 
 const now = new Date()
 
@@ -121,20 +122,7 @@ export default function Reports() {
       <div style={{ padding: '12px 16px' }}>
 
         {/* ── Filtre mois ─────────────────────────────────────── */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12,
-          overflowX: 'auto', paddingBottom: 4 }}>
-          {MONTHS.map((m, i) => (
-            <button key={i} onClick={() => setMonth(i + 1)} style={{
-              flexShrink: 0, padding: '6px 14px', borderRadius: 20,
-              border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13,
-              background: month === i+1 ? '#6C5CE7' : '#fff',
-              color:      month === i+1 ? '#fff'    : '#555',
-              boxShadow:  month === i+1
-                ? '0 2px 8px rgba(108,92,231,0.35)'
-                : '0 1px 3px rgba(0,0,0,0.08)',
-            }}>{m}</button>
-          ))}
-        </div>
+        <MonthPicker month={month} setMonth={setMonth} months={MONTHS} />
 
         {/* ── Hero taux d'épargne ─────────────────────────────── */}
         <div style={{ background: '#00b894', borderRadius: 20,

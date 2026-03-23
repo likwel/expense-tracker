@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { usePlan } from '../../hooks/usePlan'
 import api from '../../utils/api'
+import { useFmt } from '../../hooks/useFmt'
 
 /* ─── Config ────────────────────────────────────────────────────── */
 const FEATURES = [
@@ -81,6 +82,7 @@ function PaymentModal({ offer, onClose, onSuccess }) {
   const [loading,     setLoading]     = useState(false)
   const [msg,         setMsg]         = useState(null)
   const [ussdClicked, setUssdClicked] = useState(false)
+  const { fmt } = useFmt()
 
   const op = OPERATORS.find(o => o.id === operator)
 
@@ -150,7 +152,7 @@ function PaymentModal({ offer, onClose, onSuccess }) {
           <div>
             <div style={{ fontSize:16, fontWeight:700, color:'#222' }}>Passer au plan Pro</div>
             <div style={{ fontSize:12, color:'#aaa', marginTop:2 }}>
-              {offer.label} · {offer.price.toLocaleString('fr-MG')} Ar
+              {offer.label} · {fmt(offer.price)}
             </div>
           </div>
           <button onClick={onClose} style={{
@@ -403,6 +405,7 @@ function PaymentModal({ offer, onClose, onSuccess }) {
 /* ─── Page principale ───────────────────────────────────────────── */
 export default function PlanPage() {
   const navigate = useNavigate()
+  const { fmt } = useFmt()
   const { plan, loading } = usePlan()
   const [selectedOffer, setSelectedOffer] = useState(0)
   const [showModal,     setShowModal]     = useState(false)
@@ -538,9 +541,9 @@ export default function PlanPage() {
                       {offer.label}
                     </div>
                     <div style={{ fontSize:15, fontWeight:800, color: selectedOffer===i ? '#6C5CE7' : '#222', marginTop:2 }}>
-                      {offer.price.toLocaleString('fr-MG')} Ar
+                      {fmt(offer.price)}
                     </div>
-                    <div style={{ fontSize:10, color:'#bbb' }}>${offer.priceUsd}</div>
+                    {/* <div style={{ fontSize:10, color:'#bbb' }}>${offer.priceUsd}</div> */}
                   </button>
                 ))}
               </div>
@@ -552,7 +555,7 @@ export default function PlanPage() {
                 cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8,
               }}>
                 <Zap size={15} strokeWidth={2.5}/>
-                Activer Pro — {PLANS_OFFER[selectedOffer].price.toLocaleString('fr-MG')} Ar
+                Activer Pro — {fmt(PLANS_OFFER[selectedOffer].price)}
               </button>
             </div>
           )}

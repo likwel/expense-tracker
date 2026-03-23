@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import {
   Calendar, User, Shield, Sun, DollarSign, X, LogOut,
   Zap, CreditCard, HelpCircle, Bell, LayoutList,
-  AlertTriangle, CheckCircle, Info, Trash2
+  AlertTriangle, CheckCircle, Info, Trash2, Settings2
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth }     from '../../contexts/AuthContext'
@@ -12,6 +12,7 @@ import { MONTHS_FULL } from '../../utils/format'
 
 const MENU_ITEMS = [
   { icon: User,       label: 'Profil',    sub: 'Nom, email, avatar',  to: '/settings/profile',  color: '#534AB7', bg: '#EEEDFE' },
+  { icon: Settings2,       label: 'Espace Admin',    sub: 'Espace administrateur',  to: '/admin',  color: '#f7a93c', bg: '#f6f5cf' },
   { icon: Shield,     label: 'Sécurité',  sub: 'Mot de passe',        to: '/settings/security', color: '#0F6E56', bg: '#E1F5EE' },
   { icon: Sun,        label: 'Thème',     sub: 'Clair, sombre',       to: '/settings/theme',    color: '#BA7517', bg: '#FAEEDA' },
   { icon: DollarSign, label: 'Devise',    sub: 'Ar, €, $...',         to: '/settings/currency', color: '#185FA5', bg: '#E6F1FB' },

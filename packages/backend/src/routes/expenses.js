@@ -3,9 +3,9 @@ const Joi      = require('joi')
 const prisma   = require('../config/prisma')
 const auth     = require('../middleware/auth')
 const validate = require('../middleware/validate')
+const { convert, getUserCurrencies } = require('../services/currencyService')
 
-// ── Import SSE — sécurisé avec fallback si module pas encore chargé ──
-let emitToUser = () => {}   // fallback no-op par défaut
+let emitToUser = () => {}
 try {
   const sse = require('./sse')
   if (typeof sse.emitToUser === 'function') emitToUser = sse.emitToUser
@@ -24,6 +24,7 @@ const schema = Joi.object({
 
 const catSelect = { category: { select: { name:true, icon:true, color:true } } }
 
+// ── GET / ─────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   const { month, year, categoryId, take='50', skip='0' } = req.query
   const where = { userId: req.user.id }
@@ -41,37 +42,54 @@ router.get('/', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
+// ── POST / ────────────────────────────────────────────────────────
 router.post('/', validate(schema), async (req, res) => {
   try {
+    const { currency: from, defaultCurrency: to } = await getUserCurrencies(prisma, req.user.id)
+    const { amountInBase } = await convert(Number(req.body.amount), from, to)
+
     const row = await prisma.expense.create({
-      data:    { ...req.body, userId: req.user.id, date: new Date(req.body.date) },
+      data: {
+        ...req.body,
+        userId: req.user.id,
+        amount: amountInBase,         // ← stocké en defaultCurrency
+        date:   new Date(req.body.date),
+      },
       include: catSelect,
     })
 
-    // Vérifier les budgets — sans prisma en paramètre (importé dans le service)
     const date = new Date(req.body.date)
     await checkAndNotifyBudgets(
       req.user.id,
       date.getMonth() + 1,
       date.getFullYear(),
-      emitToUser            // ← 4 paramètres uniquement
+      emitToUser
     ).catch(e => console.error('[Budget notif]', e.message))
 
     res.status(201).json(row)
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
+// ── PUT /:id ──────────────────────────────────────────────────────
 router.put('/:id', validate(schema), async (req, res) => {
   try {
+    const { currency: from, defaultCurrency: to } = await getUserCurrencies(prisma, req.user.id)
+    const { amountInBase } = await convert(Number(req.body.amount), from, to)
+
     const row = await prisma.expense.updateMany({
       where: { id: Number(req.params.id), userId: req.user.id },
-      data:  { ...req.body, date: new Date(req.body.date) },
+      data:  {
+        ...req.body,
+        amount: amountInBase,         // ← stocké en defaultCurrency
+        date:   new Date(req.body.date),
+      },
     })
     if (!row.count) return res.status(404).json({ error: 'Non trouvé' })
     res.json({ success: true })
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
+// ── DELETE /:id ───────────────────────────────────────────────────
 router.delete('/:id', async (req, res) => {
   try {
     const row = await prisma.expense.deleteMany({

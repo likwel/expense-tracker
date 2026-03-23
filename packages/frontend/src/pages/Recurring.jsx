@@ -6,10 +6,12 @@ import {
 import Header from '../components/layout/Header'
 import Modal from '../components/ui/Modal'
 import Input from '../components/ui/Input'
-import { fmt } from '../utils/format'
+// import { fmt } from '../utils/format'
 import { useApi } from '../hooks/useApi'
 import api from '../services/api'
 import { LucideIcon } from '../utils/iconResolver'
+import { useFmt } from '../hooks/useFmt'
+import { useAuth } from '../contexts/AuthContext'
 
 const FREQ_LABEL = { daily: 'Quotidien', weekly: 'Hebdomadaire', monthly: 'Mensuel' }
 const DTYPE_LABEL = { all: 'Tous les jours', working: 'Jours ouvrés', holiday: 'Jours fériés' }
@@ -27,6 +29,8 @@ const EMPTY_FORM = {
 // ── Carte récurrence (composant externe) ─────────────────────────
 function RecurringCard({ item, onEdit, onToggle, onRemove }) {
   const color = item.category?.color || '#6C5CE7'
+  const { fmt } = useFmt()
+
   return (
     <div style={{
       background: '#fff', borderRadius: 16, marginBottom: 10,
@@ -144,6 +148,9 @@ export default function Recurring() {
   const [saving, setSaving] = useState(false)
   const [genMsg, setGenMsg] = useState(null)
   const [editId, setEditId] = useState(null)
+  const { fmt } = useFmt()
+  const { user } = useAuth()
+  const currency = user?.currency || 'MGA'
 
   const { data: list, refetch } = useApi('/recurring')
   const { data: cats } = useApi('/categories')
@@ -413,7 +420,7 @@ export default function Recurring() {
               </div>
             </div>
 
-            <Input label="Montant (Ar)" type="number" placeholder="5 000"
+            <Input label={`Montant (${currency})`} placeholder={fmt(50000)} type="number"
               value={form.amount} onChange={set('amount')} />
             <Input label="Description" type="text" placeholder="Transport, loyer..."
               value={form.description} onChange={set('description')} />

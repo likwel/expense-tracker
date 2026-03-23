@@ -43,6 +43,8 @@ app.use('/api/recurring-income', require('./routes/recurringIncome'))
 app.use('/api/plan',             require('./routes/plan'))
 app.use('/api/sse',              sseRouter)
 app.use('/api/notifications',    require('./routes/notifications'))
+app.use('/api/organizations', require('./routes/organizations'))
+app.use('/api/admin', require('./routes/admin'))
 
 app.get('/api/health', (_, res) => res.json({ status: 'ok', time: new Date() }))
 

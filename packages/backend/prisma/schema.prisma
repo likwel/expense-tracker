@@ -8,32 +8,135 @@ datasource db {
 }
 
 // Ajouter ces champs au model User existant
+// ── Enums ─────────────────────────────────────────────────────────
+
+enum UserRole {
+  admin
+  member
+  viewer
+  @@map("user_role")
+}
+
+enum UsageType {
+  personal   // Personnel
+  family     // Famille
+  business   // Entreprise
+  @@map("usage_type")
+}
+
+enum OrgStatus {
+  active
+  suspended
+  closed
+  @@map("org_status")
+}
+
+enum OrgType {
+  family
+  business
+  @@map("org_type")
+}
+
+enum MemberRole {
+  founder    // Fondateur — un seul par organisation
+  admin      // Peut gérer les membres
+  member     // Membre standard
+  viewer     // Lecture seule
+  @@map("member_role")
+}
+
+// ── User ──────────────────────────────────────────────────────────
 
 model User {
   id                 Int                @id @default(autoincrement())
   name               String             @db.VarChar(100)
   email              String             @unique @db.VarChar(150)
   password           String             @db.VarChar(255)
-  currency           String             @default("MGA") @db.VarChar(10)
 
-  // ── Plan & abonnement ──────────────────────────────────────
-  plan               String             @default("free") @db.VarChar(20) // 'free' | 'pro' | 'business'
+  // Devise d'affichage — changeable par l'utilisateur
+  currency           String             @default("MGA") @db.VarChar(10)
+  // Devise de base — fixée à l'inscription, jamais modifiable
+  // Tous les montants en BDD sont dans cette devise
+  defaultCurrency    String             @default("MGA") @db.VarChar(10) @map("default_currency")
+
+  // Rôle global dans l'application
+  role               UserRole           @default(member)
+
+  // Type d'utilisation principal
+  usageType          UsageType          @default(personal) @map("usage_type")
+
+  // Plan & abonnement
+  plan               String             @default("free") @db.VarChar(20)
   trialStartAt       DateTime?          @map("trial_start_at")
   trialEndAt         DateTime?          @map("trial_end_at")
   planStartAt        DateTime?          @map("plan_start_at")
-  planEndAt          DateTime?          @map("plan_end_at")   // null = actif indéfiniment
-  // ──────────────────────────────────────────────────────────
+  planEndAt          DateTime?          @map("plan_end_at")
+  isBanned  Boolean  @default(false) @map("is_banned")
 
   createdAt          DateTime           @default(now()) @map("created_at")
+
+  // Relations financières
   expenses           Expense[]
   incomes            Income[]
   budgets            Budget[]
   categories         Category[]
   recurringExpenses  RecurringExpense[]
   recurringIncomes   RecurringIncome[]
-  notifications Notification[]
+  notifications      Notification[]
+  paymentRequest     PaymentRequest[]
+
+  // Appartenance à des organisations
+  memberships        OrgMember[]
+
+  // Organisations fondées par cet utilisateur
+  foundedOrgs        Organization[]     @relation("OrgFounder")
 
   @@map("users")
+}
+
+// ── Organisation (Famille ou Entreprise) ──────────────────────────
+
+model Organization {
+  id          Int        @id @default(autoincrement())
+  name        String     @db.VarChar(150)
+  type        OrgType                          // 'family' | 'business'
+  status      OrgStatus  @default(active)
+  currency    String     @default("MGA") @db.VarChar(10)
+
+  // Fondateur — référence directe pour accès rapide
+  founderId   Int        @map("founder_id")
+  founder     User       @relation("OrgFounder", fields: [founderId], references: [id])
+
+  description String?    @db.VarChar(500)
+  logoUrl     String?    @db.VarChar(300) @map("logo_url")
+
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  // Membres
+  members     OrgMember[]
+
+  @@map("organizations")
+}
+
+// ── Table pivot : membres d'une organisation ──────────────────────
+
+model OrgMember {
+  id             Int          @id @default(autoincrement())
+  organizationId Int          @map("organization_id")
+  userId         Int          @map("user_id")
+  role           MemberRole   @default(member)
+  joinedAt       DateTime     @default(now()) @map("joined_at")
+  invitedBy      Int?         @map("invited_by")  // userId qui a invité
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Un utilisateur ne peut être membre qu'une seule fois par organisation
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@index([organizationId])
+  @@map("org_members")
 }
 
 model Category {
@@ -178,4 +281,23 @@ model Notification {
   @@index([userId, isRead])
   @@index([userId, createdAt])
   @@map("notifications")
+}
+
+model PaymentRequest {
+  id           Int       @id @default(autoincrement())
+  userId       Int       @map("user_id")
+  method       String    @db.VarChar(20)
+  operator     String?   @db.VarChar(20)
+  senderNumber String?   @db.VarChar(30)  @map("sender_number")
+  months       Int
+  amount       Decimal   @db.Decimal(15, 2)
+  status       String    @default("pending") @db.VarChar(20)  // pending | approved | rejected
+  justificatif String?   @db.VarChar(300)
+  approvedAt   DateTime? @map("approved_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@map("payment_requests")
 }

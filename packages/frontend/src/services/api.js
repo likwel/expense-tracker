@@ -86,6 +86,9 @@ export const reportsApi = {
   monthly: (p) => api.get('/reports/monthly',      { params: p }),
   pdf:     (p) => api.get('/reports/export/pdf',   { params: p, responseType: 'blob' }),
   excel:   (p) => api.get('/reports/export/excel', { params: p, responseType: 'blob' }),
+  annual:    (params) => api.get('/reports/annual',           { params, responseType:'blob' }),
+  evolution: (params) => api.get('/reports/evolution',        { params, responseType:'blob' }),
+  annualPdf: (params) => api.get('/reports/export/annual/pdf',{ params, responseType:'blob' }),
 }
 
 export default api

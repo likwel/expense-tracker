@@ -19,10 +19,12 @@ import PrivacyPage from './pages/PrivacyPage'
 import NotificationsPage from './pages/NotificationsPage'
 import HelpPage          from './pages/HelpPage'
 import PlanPage          from './pages/settings/PlanPage'
+import AdminPage from './pages/Admin'
 
 function PrivateRoute({ children }) {
-  const { user, loading } = useAuth()
-  if (loading) return (
+  const { user, loading, ratesReady } = useAuth()
+
+  if (loading || !ratesReady) return (
     <div style={{ display:'flex', alignItems:'center', justifyContent:'center',
       height:'100vh', color:'#aaa', fontSize:14 }}>
       Chargement...
@@ -59,6 +61,7 @@ function AppRoutes() {
         <Route path="/notifications"     element={<NotificationsPage />} />
         <Route path="/help"              element={<HelpPage />} />
         <Route path="/settings/plan"     element={<PlanPage />} />
+        <Route path="/admin" element={<AdminPage />} />
       </Route>
 
       {/* Fallback */}

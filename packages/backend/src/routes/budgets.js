@@ -2,6 +2,8 @@ const router = require('express').Router()
 const prisma  = require('../config/prisma')
 const auth    = require('../middleware/auth')
 
+const { convert, getUserCurrencies } = require('../services/currencyService')
+
 router.use(auth)
 
 // ── GET / — liste budgets du mois avec spent calculé dynamiquement ──
@@ -31,7 +33,15 @@ router.get('/', async (req, res) => {
 // ── POST / — créer ou mettre à jour (upsert) ──────────────────────
 router.post('/', async (req, res) => {
   const { categoryId, amount, month, year } = req.body
+
   try {
+    // 1. Récupérer les devises de l'utilisateur
+    const { currency: fromCurrency, defaultCurrency: toCurrency } =
+    await getUserCurrencies(prisma, req.user.id)
+
+    // 2. Convertir le montant saisi vers la devise de base
+    const { amountInBase, rate } = await convert(Number(amount), fromCurrency, toCurrency)
+
     const row = await prisma.budget.upsert({
       where: {
         userId_categoryId_month_year: {
@@ -41,11 +51,11 @@ router.post('/', async (req, res) => {
           year:       Number(year),
         },
       },
-      update: { amount: Number(amount) },
+      update: { amount: amountInBase },
       create: {
         userId:     req.user.id,
         categoryId: Number(categoryId),
-        amount:     Number(amount),
+        amount:     amountInBase,
         month:      Number(month),
         year:       Number(year),
       },
@@ -59,6 +69,13 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   const { amount } = req.body
   try {
+    // 1. Récupérer les devises de l'utilisateur
+    const { currency: fromCurrency, defaultCurrency: toCurrency } =
+    await getUserCurrencies(prisma, req.user.id)
+
+    // 2. Convertir le montant saisi vers la devise de base
+    const { amountInBase, rate } = await convert(Number(amount), fromCurrency, toCurrency)
+
     const existing = await prisma.budget.findFirst({
       where: { id: Number(req.params.id), userId: req.user.id },
     })
@@ -66,7 +83,7 @@ router.put('/:id', async (req, res) => {
 
     const row = await prisma.budget.update({
       where:   { id: Number(req.params.id) },
-      data:    { amount: Number(amount) },
+      data:    { amount: amountInBase },
       include: { category: { select: { name:true, icon:true, color:true } } },
     })
     res.json(row)

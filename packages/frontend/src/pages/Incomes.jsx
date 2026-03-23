@@ -191,6 +191,7 @@ export default function Incomes() {
   // Stats
   const punctualAmt  = incomes.filter(i => !i.isRecurring).reduce((s,i) => s + Number(i.amount), 0)
   const generatedAmt = incomes.filter(i =>  i.isRecurring).reduce((s,i) => s + Number(i.amount), 0)
+  const recurringList = incomes.filter(i =>  i.isRecurring)
 
   const mStart = new Date(year, month-1, 1)
   const mEnd   = new Date(year, month, 0)
@@ -204,34 +205,47 @@ export default function Incomes() {
 
   const daysInMonth = new Date(year, month, 0).getDate()
   const workingDays = Math.round(daysInMonth * 5 / 7)
-  const estimatedAmt = activeRec.reduce((s, r) => {
-    const amt     = Number(r.amount)
-    const rEnd    = r.endDate ? new Date(r.endDate) : null
-    // Date effective de fin dans ce mois = min(fin du mois, endDate)
-    const effEnd  = rEnd && rEnd < mEnd ? rEnd : mEnd
-    const effDays = Math.max(0, Math.round((effEnd - mStart) / 86400000) + 1)
-    // Jours ouvrés effectifs (approx)
-    const effWorking = Math.round(effDays * 5 / 7)
+
+  const estimate = (list) => list.reduce((s, r) => {
+    const amt  = Number(r.amount)
+    const rEnd = r.endDate ? new Date(r.endDate) : null
 
     if (r.frequency === 'monthly') {
-      // Si endDate avant le jour de prélèvement → pas de génération ce mois
       const dueDay = r.dayOfMonth || 1
-      if (rEnd && rEnd < new Date(year, month - 1, dueDay)) return s
+      if (rEnd && rEnd < new Date(now.getFullYear(), now.getMonth(), dueDay)) return s
       return s + amt
     }
+
     if (r.frequency === 'weekly') {
-      const weeks = effDays / 7
-      return s + amt * weeks
+      const effEnd  = rEnd && rEnd < mEnd ? rEnd : mEnd
+      const effDays = Math.max(0, Math.round((effEnd - mStart) / 86400000) + 1)
+      return s + amt * (effDays / 7)
     }
+
     if (r.frequency === 'daily') {
+      const rStart = r.startDate ? new Date(r.startDate) : mStart
+      // Début effectif = max(startDate, début du mois)
+      const effStart = rStart > mStart ? rStart : mStart
+      // Fin effective  = min(endDate,   fin du mois)
+      const effEnd   = rEnd && rEnd < mEnd ? rEnd : mEnd
+
+      const effDays    = Math.max(0, Math.round((effEnd - effStart) / 86400000) + 1)
+      
+      const effWorking = Math.round(effDays * 5 / 7)
       return s + amt * (r.dayType === 'working' ? effWorking : effDays)
     }
+
     return s
   }, 0)
 
-  const recurringAmt = generatedAmt > 0 ? generatedAmt : estimatedAmt
-  const totalInc     = punctualAmt + recurringAmt
-  const isEstimated  = generatedAmt === 0 && estimatedAmt > 0
+  const recurringAmt  = estimate(activeRec)
+
+  // const recurringAmt = generatedAmt > 0 ? generatedAmt : estimatedAmt
+  // const recurringAmt = estimatedAmt
+  // const totalInc     = punctualAmt + recurringAmt
+  const totalInc     = punctualAmt + recurringAmt 
+  // const isEstimated  = generatedAmt === 0 && estimatedAmt > 0
+  const isEstimated  = recurringAmt  > 0
 
   // Filtre ponctuel
   const filteredPunctual = useMemo(() => incomes.filter(i => {

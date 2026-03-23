@@ -179,6 +179,7 @@ const download = (blob, filename) => {
   URL.revokeObjectURL(url)
 }
 
+
 const filterActive = (list, year, month) => (list || []).filter(r => {
   if (!r.isActive) return false
   const start  = new Date(r.startDate)
@@ -188,16 +189,6 @@ const filterActive = (list, year, month) => (list || []).filter(r => {
   return start <= mEnd && (!end || end >= mStart)
 })
 
-const estimateAmount = (list, daysInMonth, workingDays) =>
-  list.reduce((s, r) => {
-    const amt = Number(r.amount)
-    if (r.frequency === 'monthly') return s + amt
-    if (r.frequency === 'weekly')  return s + amt * 4
-    if (r.frequency === 'daily')
-      return s + amt * (r.dayType === 'working' ? workingDays : daysInMonth)
-    return s
-  }, 0)
-
 /* ─── Page principale ───────────────────────────────────────────── */
 export default function Reports() {
   const [month,      setMonth]      = useState(now.getMonth() + 1)
@@ -206,6 +197,9 @@ export default function Reports() {
   const { fmt }  = useFmt()
   const { plan } = usePlan()
   const isPro    = plan?.effectivePlan === 'pro' || plan?.isTrial
+
+  const mStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const mEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0)
 
   const { data: summary }      = useApi('/reports/summary',   { month, year })
   const { data: recurExpList } = useApi('/recurring')
@@ -231,20 +225,58 @@ export default function Reports() {
   const activeRecurInc = filterActive(recurIncList, year, month)
   const daysInMonth    = new Date(year, month, 0).getDate()
   const workingDays    = Math.round(daysInMonth * 5 / 7)
+
+  
+const estimateAmount = (list, daysInMonth, workingDays) =>
+  list.reduce((s, r) => {
+    
+    const amt = Number(r.amount)
+    const rEnd = r.endDate ? new Date(r.endDate) : null
+    if (r.frequency === 'monthly') return s + amt
+    if (r.frequency === 'weekly')  return s + amt * 4
+    if (r.frequency === 'daily') {
+      const rStart = r.startDate ? new Date(r.startDate) : mStart
+      // Début effectif = max(startDate, début du mois)
+      const effStart = rStart > mStart ? rStart : mStart
+      // Fin effective  = min(endDate,   fin du mois)
+      const effEnd   = rEnd && rEnd < mEnd ? rEnd : mEnd
+
+      const effDays    = Math.max(0, Math.round((effEnd - effStart) / 86400000) + 1)
+      
+      const effWorking = Math.round(effDays * 5 / 7)
+      
+      return s + amt * (r.dayType === 'working' ? effWorking : effDays)
+    }
+    // if (r.frequency === 'daily')
+    //   return s + amt * (r.dayType === 'working' ? workingDays : daysInMonth)
+    return s
+  }, 0)
+
   const estimatedExp   = estimateAmount(activeRecurExp, daysInMonth, workingDays)
   const estimatedInc   = estimateAmount(activeRecurInc, daysInMonth, workingDays)
 
-  const totalRecurExp = recurringExp > 0 ? recurringExp : estimatedExp
-  const totalRecurInc = recurringInc > 0 ? recurringInc : estimatedInc
+  // const totalRecurExp = recurringExp > 0 ? recurringExp : estimatedExp
+  // const totalRecurInc = recurringInc > 0 ? recurringInc : estimatedInc
+    
+  const totalRecurExp = estimatedExp
+  const totalRecurInc = estimatedInc
   const totalExp      = punctualExp + totalRecurExp
-  const totalInc      = totalIncReal > 0
-    ? totalIncReal + (recurringInc === 0 ? estimatedInc : 0)
-    : punctualInc + totalRecurInc
+  // const totalInc      = totalIncReal > 0
+  //   ? totalIncReal + (recurringInc === 0 ? estimatedInc : 0)
+  //   : punctualInc + totalRecurInc
+  
+  const totalInc =  punctualInc + totalRecurInc
   const balance       = totalInc - totalExp
   const savings       = totalInc > 0 ? Math.round((balance / totalInc) * 100) : 0
 
-  const isExpEstimated = recurringExp === 0 && estimatedExp > 0
-  const isIncEstimated = recurringInc === 0 && estimatedInc > 0
+  console.log(totalInc);
+  
+
+  // const isExpEstimated = recurringExp === 0 && estimatedExp > 0
+  // const isIncEstimated = recurringInc === 0 && estimatedInc > 0
+
+  const isExpEstimated = estimatedExp > 0
+  const isIncEstimated = estimatedInc > 0
 
   /* ── Données évolution (Pro) ─────────────────────────────────── */
   const evoData = (evolution?.months || Array.from({ length: 6 }, (_, i) => ({

@@ -34,9 +34,8 @@ async function convert(amount, fromCurrency, toCurrency) {
   }
   try {
     const rate = await getRate(fromCurrency, toCurrency)
-    return { amountInBase: amount * rate, rate }
+    return { amountInBase: Math.ceil(amount * rate), rate }
   } catch (_) {
-    // Dégradé gracieux : on stocke le montant brut si l'API est indisponible
     console.warn(`[currencyService] Conversion échouée ${fromCurrency}→${toCurrency}, montant brut conservé`)
     return { amountInBase: amount, rate: 1 }
   }

@@ -3,6 +3,7 @@ const Joi      = require('joi')
 const prisma   = require('../config/prisma')
 const auth     = require('../middleware/auth')
 const validate = require('../middleware/validate')
+const { convert, getUserCurrencies } = require('../services/currencyService')
 
 router.use(auth)
 
@@ -20,7 +21,7 @@ const schema = Joi.object({
 
 const catSelect = { category: { select: { name:true, icon:true, color:true } } }
 
-// GET /api/recurring-income
+// ── GET / ─────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
     const data = await prisma.recurringIncome.findMany({
@@ -32,13 +33,17 @@ router.get('/', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
-// POST /api/recurring-income
+// ── POST / ────────────────────────────────────────────────────────
 router.post('/', validate(schema), async (req, res) => {
   try {
+    const { currency: from, defaultCurrency: to } = await getUserCurrencies(prisma, req.user.id)
+    const { amountInBase } = await convert(Number(req.body.amount), from, to)
+
     const row = await prisma.recurringIncome.create({
       data: {
         ...req.body,
         userId:    req.user.id,
+        amount:    amountInBase,          // ← stocké en defaultCurrency
         startDate: new Date(req.body.startDate),
         endDate:   req.body.endDate ? new Date(req.body.endDate) : null,
       },
@@ -48,13 +53,17 @@ router.post('/', validate(schema), async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
-// PUT /api/recurring-income/:id
+// ── PUT /:id ──────────────────────────────────────────────────────
 router.put('/:id', validate(schema), async (req, res) => {
   try {
+    const { currency: from, defaultCurrency: to } = await getUserCurrencies(prisma, req.user.id)
+    const { amountInBase } = await convert(Number(req.body.amount), from, to)
+
     const row = await prisma.recurringIncome.updateMany({
       where: { id: Number(req.params.id), userId: req.user.id },
       data: {
         ...req.body,
+        amount:    amountInBase,          // ← stocké en defaultCurrency
         startDate: new Date(req.body.startDate),
         endDate:   req.body.endDate ? new Date(req.body.endDate) : null,
       },
@@ -64,7 +73,7 @@ router.put('/:id', validate(schema), async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
-// PATCH /api/recurring-income/:id/toggle
+// ── PATCH /:id/toggle ─────────────────────────────────────────────
 router.patch('/:id/toggle', async (req, res) => {
   try {
     const current = await prisma.recurringIncome.findFirst({
@@ -79,7 +88,7 @@ router.patch('/:id/toggle', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
-// DELETE /api/recurring-income/:id
+// ── DELETE /:id ───────────────────────────────────────────────────
 router.delete('/:id', async (req, res) => {
   try {
     const row = await prisma.recurringIncome.deleteMany({
@@ -90,9 +99,10 @@ router.delete('/:id', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
-// POST /api/recurring-income/generate
+// ── POST /generate ────────────────────────────────────────────────
+// rec.amount est déjà en defaultCurrency → pas de conversion lors de la génération
 router.post('/generate', async (req, res) => {
-  const today   = new Date()
+  const today    = new Date()
   today.setHours(0, 0, 0, 0)
   const todayDay = today.getDate()
   const todayDow = today.getDay()
@@ -128,15 +138,16 @@ router.post('/generate', async (req, res) => {
       })
       if (exists) continue
 
+      // rec.amount déjà en defaultCurrency — copie directe
       const income = await prisma.income.create({
         data: {
-          userId:           rec.userId,
-          categoryId:       rec.categoryId,
+          userId:            rec.userId,
+          categoryId:        rec.categoryId,
           recurringIncomeId: rec.id,
-          amount:           rec.amount,
-          description:      rec.description,
-          date:             today,
-          isRecurring:      true,
+          amount:            rec.amount,
+          description:       rec.description,
+          date:              today,
+          isRecurring:       true,
         },
       })
       generated.push(income)

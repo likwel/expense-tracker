@@ -65,41 +65,59 @@ export default function Dashboard() {
   // ── Estimation récurrentes non encore générées ────────────────
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
   const workingDays = Math.round(daysInMonth * 5 / 7)
-
+  
   const estimate = (list) => list.reduce((s, r) => {
-    const amt     = Number(r.amount)
-    const rEnd    = r.endDate ? new Date(r.endDate) : null
-    // Fin effective dans ce mois = min(fin du mois, endDate)
-    const effEnd     = rEnd && rEnd < mEnd ? rEnd : mEnd
-    const effDays    = Math.max(0, Math.round((effEnd - mStart) / 86400000) + 1)
-    const effWorking = Math.round(effDays * 5 / 7)
+    const amt  = Number(r.amount)
+    const rEnd = r.endDate ? new Date(r.endDate) : null
 
     if (r.frequency === 'monthly') {
-      // Si endDate avant le jour de prélèvement → pas généré ce mois
       const dueDay = r.dayOfMonth || 1
       if (rEnd && rEnd < new Date(now.getFullYear(), now.getMonth(), dueDay)) return s
       return s + amt
     }
-    if (r.frequency === 'weekly') return s + amt * (effDays / 7)
-    if (r.frequency === 'daily')
+
+    if (r.frequency === 'weekly') {
+      const effEnd  = rEnd && rEnd < mEnd ? rEnd : mEnd
+      const effDays = Math.max(0, Math.round((effEnd - mStart) / 86400000) + 1)
+      return s + amt * (effDays / 7)
+    }
+
+    if (r.frequency === 'daily') {
+      const rStart = r.startDate ? new Date(r.startDate) : mStart
+      // Début effectif = max(startDate, début du mois)
+      const effStart = rStart > mStart ? rStart : mStart
+      // Fin effective  = min(endDate,   fin du mois)
+      const effEnd   = rEnd && rEnd < mEnd ? rEnd : mEnd
+
+      const effDays    = Math.max(0, Math.round((effEnd - effStart) / 86400000) + 1)
+      
+      const effWorking = Math.round(effDays * 5 / 7)
       return s + amt * (r.dayType === 'working' ? effWorking : effDays)
+    }
+
     return s
   }, 0)
 
   const estimatedExp = estimate(activeRecurExp)
   const estimatedInc = estimate(activeRecurInc)
+  
 
   // ── Totaux cohérents ──────────────────────────────────────────
   // Dépenses : ponctuel + récurrent (réel ou estimé)
-  const totalRecurExp = recurringExp > 0 ? recurringExp : estimatedExp
+  // const totalRecurExp = recurringExp > 0 ? recurringExp : estimatedExp
+  const totalRecurExp = estimatedExp
   const totalExp = punctualExp + totalRecurExp
 
   // Revenus : priorité totalIncReal (backend) qui inclut ponctuel + récurrent déjà générés
   // + estimation des récurrents non encore générés
-  const totalRecurInc = recurringInc > 0 ? recurringInc : estimatedInc
-  const totalInc = totalIncReal > 0
-    ? totalIncReal + (recurringInc === 0 ? estimatedInc : 0)  // réel + estimation si pas encore générés
-    : punctualInc + totalRecurInc
+  // const totalRecurInc = recurringInc > 0 ? recurringInc : estimatedInc
+  const totalRecurInc = estimatedInc
+  // const totalInc = totalIncReal > 0
+  //   ? totalIncReal + (recurringInc === 0 ? estimatedInc : 0)  // réel + estimation si pas encore générés
+  //   : punctualInc + totalRecurInc
+    
+  const totalInc = punctualInc + totalRecurInc
+    
 
   const balance = totalInc - totalExp
   const savingPct = totalInc > 0 ? Math.round((balance / totalInc) * 100) : 0

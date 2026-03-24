@@ -1,7 +1,7 @@
 // services/currencyService.js
 
 const rateCache = new Map()
-const CACHE_TTL = 5 * 60 * 1000  // 5 minutes
+const CACHE_TTL = 60 * 60 * 1000  // 5 minutes
 
 /**
  * Récupère le taux de change depuis `from` vers `to`.

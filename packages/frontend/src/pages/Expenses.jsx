@@ -290,7 +290,7 @@ export default function Expenses() {
   const currency = user?.currency || 'MGA'
 
   // Navigation
-  const [tab,    setTab]    = useState('punctual')   // 'punctual' | 'recurring'
+  const [tab,    setTab]    = useState('punctual')
   const [month,  setMonth]  = useState(now.getMonth() + 1)
   const [year]              = useState(now.getFullYear())
 
@@ -298,14 +298,14 @@ export default function Expenses() {
   const [fabOpen, setFabOpen] = useState(false)
 
   // Modals
-  const [modalType, setModalType] = useState(null)  // 'punctual' | 'recurring' | null
+  const [modalType, setModalType] = useState(null)
 
   // Ponctuel
-  const [editItem,    setEditItem]    = useState(null)
+  const [editItem,     setEditItem]     = useState(null)
   const [punctualForm, setPunctualForm] = useState(EMPTY_PUNCTUAL)
-  const [search,      setSearch]      = useState('')
-  const [filterCat,   setFilterCat]   = useState('')
-  const [showFilter,  setShowFilter]  = useState(false)
+  const [search,       setSearch]       = useState('')
+  const [filterCat,    setFilterCat]    = useState('')
+  const [showFilter,   setShowFilter]   = useState(false)
 
   // Récurrent
   const [editId,        setEditId]        = useState(null)
@@ -320,42 +320,46 @@ export default function Expenses() {
   const { data: cats }                           = useApi('/categories')
   const { data: holidays }                       = useApi('/recurring/holidays', { year })
 
-  const expenses = expData?.data || []
+  const expenses   = expData?.data || []
   const recurItems = recurList || []
-  const expCats  = (cats || []).filter(c => c.type === 'expense')
+  const expCats    = (cats || []).filter(c => c.type === 'expense')
 
   // Stats ponctuel
-  const totalExp    = expenses.reduce((s,e) => s + Number(e.amount), 0)
-  const punctual    = expenses.filter(e => !e.isRecurring).reduce((s,e) => s + Number(e.amount), 0)
-  const recurringGenerated = expenses.filter(e => e.isRecurring).reduce((s,e) => s + Number(e.amount), 0)
+  const totalExp           = expenses.reduce((s,e) => s + Number(e.amount), 0)
+  const punctual           = expenses.filter(e => !e.isRecurring).reduce((s,e) => s + Number(e.amount), 0)
+  const recurringGenerated = expenses.filter(e =>  e.isRecurring).reduce((s,e) => s + Number(e.amount), 0)
 
   // Stats récurrent
-  const activeRec   = recurItems.filter(i => i.isActive)
+  const activeRec   = recurItems.filter(i =>  i.isActive)
   const inactiveRec = recurItems.filter(i => !i.isActive)
-  // const totalActive = activeRec.reduce((s,r) => s + Number(r.amount), 0)
 
-  const mStart      = new Date(year, month - 1, 1)
-  const mEnd        = new Date(year, month, 0)
+  // ✅ UTC + réactif au mois sélectionné
+  const mStart      = new Date(Date.UTC(year, month - 1, 1))
+  const mEnd        = new Date(Date.UTC(year, month, 0))
+  const daysInMonth = mEnd.getDate()
+  const workingDays = Math.round(daysInMonth * 5 / 7)
 
-  const totalActive = activeRec.reduce((s, r) => {
-    const amt    = Number(r.amount)
-    const rEnd   = r.endDate ? new Date(r.endDate) : null
-    const effEnd = rEnd && rEnd < mEnd ? rEnd : mEnd
-    const effDays    = Math.max(0, Math.round((effEnd - mStart) / 86400000) + 1)
-    const effWorking = Math.round(effDays * 5 / 7)
+  const estimateAmount = (list, _mStart, _mEnd) => list.reduce((s, r) => {
+    const amt  = Number(r.amount)
+    const rEnd = r.endDate ? new Date(r.endDate) : null
 
-    if (r.frequency === 'monthly') {
-      const dueDay = r.dayOfMonth || 1
-      if (rEnd && rEnd < new Date(year, month - 1, dueDay)) return s
-      return s + amt
+    if (r.frequency === 'monthly') return s + amt
+    if (r.frequency === 'weekly')  return s + amt * 4
+
+    if (r.frequency === 'daily') {
+      const rStart     = r.startDate ? new Date(r.startDate) : _mStart
+      const effStart   = rStart > _mStart ? rStart : _mStart
+      const effEnd     = rEnd && rEnd < _mEnd ? rEnd : _mEnd
+      const effDays    = Math.max(0, Math.round((effEnd - effStart) / 86400000) + 1)
+      const effWorking = Math.round(effDays * 5 / 7)
+      return s + amt * (r.dayType === 'working' ? effWorking : effDays)
     }
-    if (r.frequency === 'weekly')  return s + amt * (effDays / 7)
-    if (r.frequency === 'daily')   return s + amt * (r.dayType === 'working' ? effWorking : effDays)
+
     return s
   }, 0)
 
-  // Affiche le généré si disponible, sinon estimation depuis les récurrences actives
-  const recurring = recurringGenerated > 0 ? recurringGenerated : totalActive
+  const totalActive = estimateAmount(activeRec, mStart, mEnd)
+  const recurring   = totalActive
 
   const filtered = useMemo(() => expenses.filter(e => {
     const matchSearch = !search || (e.description||e.category?.name||'').toLowerCase().includes(search.toLowerCase())
@@ -438,9 +442,8 @@ export default function Expenses() {
 
         <MonthPicker month={month} setMonth={setMonth} months={MONTHS}/>
 
-        {/* ── Résumé global — 1 carte ── */}
+        {/* ── Résumé global ── */}
         <div style={{ ...S.card, padding:'16px', marginBottom:12 }}>
-          {/* Total */}
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:12 }}>
             <div>
               <div style={{ fontSize:11, color:'#aaa', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.4px', marginBottom:4 }}>
@@ -455,7 +458,6 @@ export default function Expenses() {
             </div>
           </div>
 
-          {/* Barre répartition */}
           {totalExp > 0 && (
             <div style={{ height:5, borderRadius:3, background:'#f0f0f0', overflow:'hidden', display:'flex', marginBottom:10 }}>
               <div style={{ width:`${Math.round((punctual/totalExp)*100)}%`, background:'#E24B4A', transition:'width 0.4s' }}/>
@@ -463,7 +465,6 @@ export default function Expenses() {
             </div>
           )}
 
-          {/* Détail ponctuel + récurrent */}
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
             <div style={{ background:'#fafafa', borderRadius:10, padding:'10px 12px', border:'0.5px solid #f0f0f0' }}>
               <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:4 }}>
@@ -514,7 +515,6 @@ export default function Expenses() {
         {/* ══ TAB PONCTUEL ══ */}
         {tab === 'punctual' && (
           <>
-            {/* Top catégories */}
             {topCats.length > 0 && totalExp > 0 && (
               <div style={{ ...S.card, padding:'14px' }}>
                 {topCats.map(([name, amt]) => (
@@ -531,7 +531,6 @@ export default function Expenses() {
               </div>
             )}
 
-            {/* Recherche + filtre */}
             <div style={{ display:'flex', gap:8, marginBottom:12 }}>
               <div style={{ flex:1, display:'flex', alignItems:'center', gap:8, background:'#fff', borderRadius:12, padding:'0 12px', border:'0.5px solid #eee' }}>
                 <Search size={14} color="#bbb"/>
@@ -553,7 +552,6 @@ export default function Expenses() {
               </div>
             )}
 
-            {/* Liste ponctuel */}
             <div style={S.card}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'12px 14px', borderBottom:'0.5px solid #f5f5f5' }}>
                 <span style={{ fontWeight:700, fontSize:14, color:'#222' }}>
@@ -577,7 +575,6 @@ export default function Expenses() {
         {/* ══ TAB RÉCURRENT ══ */}
         {tab === 'recurring' && (
           <>
-            {/* Bouton générer */}
             <button onClick={generate} style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:8, padding:12, borderRadius:14, marginBottom:14, background:'#f7f6fd', border:'1.5px solid #EEEDFE', color:'#6C5CE7', fontWeight:700, fontSize:13, cursor:'pointer' }}>
               <RefreshCw size={15} strokeWidth={2}/> Générer les dépenses du jour
             </button>
@@ -618,7 +615,6 @@ export default function Expenses() {
                 </>
             }
 
-            {/* Jours fériés */}
             {holidays?.length>0 && (
               <div style={{ ...S.card, marginTop:14 }}>
                 <div style={{ padding:'12px 14px', borderBottom:'0.5px solid #f5f5f5', display:'flex', alignItems:'center', gap:8 }}>
@@ -637,7 +633,7 @@ export default function Expenses() {
         )}
       </div>
 
-      {/* ── FAB avec menu ── */}
+      {/* ── FAB ── */}
       {fabOpen && (
         <div onClick={() => setFabOpen(false)} style={{ position:'fixed', inset:0, zIndex:14 }}/>
       )}

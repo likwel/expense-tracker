@@ -81,7 +81,6 @@ function ProModal({ feature, onClose }) {
           <div style={{ width:36, height:4, borderRadius:2, background:'#e0e0e0' }}/>
         </div>
         <div style={{ padding:'12px 20px 20px' }}>
-          {/* Icône */}
           <div style={{
             width:52, height:52, borderRadius:16, background:'#EEEDFE',
             display:'flex', alignItems:'center', justifyContent:'center', marginBottom:14,
@@ -95,8 +94,6 @@ function ProModal({ feature, onClose }) {
             <strong style={{ color:'#222' }}>{FEATURE_LABELS[feature]}</strong> est disponible
             avec le plan Pro. Passez au Pro pour débloquer toutes les fonctionnalités avancées.
           </div>
-
-          {/* Features listées */}
           {[
             { icon: BarChart2,   label: 'Graphique évolution 6/12 mois' },
             { icon: ArrowRight,  label: 'Comparaison mois précédent'    },
@@ -116,7 +113,6 @@ function ProModal({ feature, onClose }) {
               <span style={{ fontSize:13, color:'#444' }}>{label}</span>
             </div>
           ))}
-
           <button onClick={() => { onClose(); navigate('/plan') }} style={{
             width:'100%', padding:14, borderRadius:12, border:'none',
             background:'#6C5CE7', color:'#fff', fontWeight:700, fontSize:15,
@@ -143,11 +139,9 @@ function ProModal({ feature, onClose }) {
 function ProCard({ feature, title, icon: Icon, preview, onUpgrade }) {
   return (
     <Card style={{ position:'relative', overflow:'hidden' }}>
-      {/* Contenu flouté en arrière-plan */}
       <div style={{ filter:'blur(3px)', opacity:0.35, pointerEvents:'none', userSelect:'none' }}>
         {preview}
       </div>
-      {/* Overlay cadenas */}
       <div onClick={() => onUpgrade(feature)} style={{
         position:'absolute', inset:0, cursor:'pointer',
         display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
@@ -179,39 +173,39 @@ const download = (blob, filename) => {
   URL.revokeObjectURL(url)
 }
 
-
 const filterActive = (list, year, month) => (list || []).filter(r => {
   if (!r.isActive) return false
   const start  = new Date(r.startDate)
   const end    = r.endDate ? new Date(r.endDate) : null
-  const mStart = new Date(year, month - 1, 1)
-  const mEnd   = new Date(year, month, 0)
-  return start <= mEnd && (!end || end >= mStart)
+  const mStart = new Date(Date.UTC(year, month - 1, 1))
+  const mEnd   = new Date(Date.UTC(year, month, 0))
+  // Exclure si endDate est dépassé (antérieur au début du mois sélectionné)
+  if (end && end < mStart) return false
+  return start <= mEnd
 })
 
 /* ─── Page principale ───────────────────────────────────────────── */
 export default function Reports() {
-  const [month,      setMonth]      = useState(now.getMonth() + 1)
-  const [year]                      = useState(now.getFullYear())
-  const [proModal,   setProModal]   = useState(null)   // feature id ou null
+  const [month,    setMonth]    = useState(now.getMonth() + 1)
+  const [year]                  = useState(now.getFullYear())
+  const [proModal, setProModal] = useState(null)
   const { fmt }  = useFmt()
   const { plan } = usePlan()
   const isPro    = plan?.effectivePlan === 'pro' || plan?.isTrial
 
-  const mStart = new Date(now.getFullYear(), now.getMonth(), 1)
-  const mEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+  // ✅ UTC pour éviter les décalages de fuseau horaire
+  const mStart = new Date(Date.UTC(year, month - 1, 1))
+  const mEnd   = new Date(Date.UTC(year, month, 0))
 
   const { data: summary }      = useApi('/reports/summary',   { month, year })
   const { data: recurExpList } = useApi('/recurring')
   const { data: recurIncList } = useApi('/recurring-income')
-  // Données Pro : évolution 12 mois
   const { data: evolution }    = useApi(isPro ? '/reports/evolution' : null, { year })
-  // Données Pro : comparaison mois précédent
+
   const prevMonth = month === 1 ? 12 : month - 1
   const prevYear  = month === 1 ? year - 1 : year
-  const { data: prevSummary }  = useApi(isPro ? '/reports/summary' : null, { month: prevMonth, year: prevYear })
-  // Données Pro : rapport annuel
-  const { data: annualData }   = useApi(isPro ? '/reports/annual' : null, { year })
+  const { data: prevSummary } = useApi(isPro ? '/reports/summary' : null, { month: prevMonth, year: prevYear })
+  const { data: annualData }  = useApi(isPro ? '/reports/annual'  : null, { year })
 
   /* ── Valeurs backend ─────────────────────────────────────────── */
   const punctualExp  = summary?.punctualExpenses  || 0
@@ -221,59 +215,58 @@ export default function Reports() {
   const totalIncReal = summary?.totalIncomes      || 0
   const byCat        = summary?.byCategory        || []
 
-  const activeRecurExp = filterActive(recurExpList, year, month)
-  const activeRecurInc = filterActive(recurIncList, year, month)
-  const daysInMonth    = new Date(year, month, 0).getDate()
+  // ✅ même filtre que Expenses : juste isActive
+  const activeRecurExp = (recurExpList || []).filter(r => r.isActive)
+  const activeRecurInc = (recurIncList || []).filter(r => r.isActive)
+  const daysInMonth    = mEnd.getDate()
   const workingDays    = Math.round(daysInMonth * 5 / 7)
 
-  
-const estimateAmount = (list, daysInMonth, workingDays) =>
-  list.reduce((s, r) => {
-    
-    const amt = Number(r.amount)
+  console.log('=== DEBUG REPORT ===')
+  console.log('mois sélectionné:', month, year)
+  console.log('mStart:', mStart.toISOString(), '| mEnd:', mEnd.toISOString())
+  console.log('activeRecurExp:', activeRecurExp.map(r => ({
+    id: r.id, desc: r.description, freq: r.frequency,
+    dayType: r.dayType, amount: r.amount,
+    startDate: r.startDate, endDate: r.endDate,
+  })))
+  console.log('activeRecurInc:', activeRecurInc.map(r => ({
+    id: r.id, desc: r.description, freq: r.frequency,
+    dayType: r.dayType, amount: r.amount,
+    startDate: r.startDate, endDate: r.endDate,
+  })))
+
+  const estimateAmount = (list, _mStart, _mEnd) => list.reduce((s, r) => {
+    const amt  = Number(r.amount)
     const rEnd = r.endDate ? new Date(r.endDate) : null
+
     if (r.frequency === 'monthly') return s + amt
     if (r.frequency === 'weekly')  return s + amt * 4
-    if (r.frequency === 'daily') {
-      const rStart = r.startDate ? new Date(r.startDate) : mStart
-      // Début effectif = max(startDate, début du mois)
-      const effStart = rStart > mStart ? rStart : mStart
-      // Fin effective  = min(endDate,   fin du mois)
-      const effEnd   = rEnd && rEnd < mEnd ? rEnd : mEnd
 
+    if (r.frequency === 'daily') {
+      // ✅ Parser en UTC pour cohérence avec _mStart/_mEnd
+      const rStart   = r.startDate ? new Date(r.startDate) : _mStart
+      // effStart = toujours le 1er jour du mois sélectionné si startDate est avant
+      const effStart = rStart > _mStart ? rStart : _mStart
+      const effEnd   = rEnd && rEnd < _mEnd ? rEnd : _mEnd
       const effDays    = Math.max(0, Math.round((effEnd - effStart) / 86400000) + 1)
-      
       const effWorking = Math.round(effDays * 5 / 7)
-      
       return s + amt * (r.dayType === 'working' ? effWorking : effDays)
     }
-    // if (r.frequency === 'daily')
-    //   return s + amt * (r.dayType === 'working' ? workingDays : daysInMonth)
+
     return s
   }, 0)
 
-  const estimatedExp   = estimateAmount(activeRecurExp, daysInMonth, workingDays)
-  const estimatedInc   = estimateAmount(activeRecurInc, daysInMonth, workingDays)
+  const estimatedExp = estimateAmount(activeRecurExp, mStart, mEnd)
+  const estimatedInc = estimateAmount(activeRecurInc, mStart, mEnd)
 
-  // const totalRecurExp = recurringExp > 0 ? recurringExp : estimatedExp
-  // const totalRecurInc = recurringInc > 0 ? recurringInc : estimatedInc
-    
+  console.log('estimatedExp:', estimatedExp, '| estimatedInc:', estimatedInc)
+
   const totalRecurExp = estimatedExp
   const totalRecurInc = estimatedInc
   const totalExp      = punctualExp + totalRecurExp
-  // const totalInc      = totalIncReal > 0
-  //   ? totalIncReal + (recurringInc === 0 ? estimatedInc : 0)
-  //   : punctualInc + totalRecurInc
-  
-  const totalInc =  punctualInc + totalRecurInc
+  const totalInc      = punctualInc + totalRecurInc
   const balance       = totalInc - totalExp
   const savings       = totalInc > 0 ? Math.round((balance / totalInc) * 100) : 0
-
-  console.log(totalInc);
-  
-
-  // const isExpEstimated = recurringExp === 0 && estimatedExp > 0
-  // const isIncEstimated = recurringInc === 0 && estimatedInc > 0
 
   const isExpEstimated = estimatedExp > 0
   const isIncEstimated = estimatedInc > 0
@@ -281,7 +274,7 @@ const estimateAmount = (list, daysInMonth, workingDays) =>
   /* ── Données évolution (Pro) ─────────────────────────────────── */
   const evoData = (evolution?.months || Array.from({ length: 6 }, (_, i) => ({
     label: MONTHS[(month - 6 + i + 12) % 12]?.slice(0, 3),
-    value: Math.random() * 500000,  // placeholder pour aperçu flouté
+    value: Math.random() * 500000,
   }))).slice(-6).map(m => ({
     label: m.label || MONTHS[m.month - 1]?.slice(0, 3),
     value: m.totalExpenses || m.value || 0,
@@ -310,8 +303,7 @@ const estimateAmount = (list, daysInMonth, workingDays) =>
     try {
       const r = await reportsApi.annual({ year })
       download(r.data, `rapport-annuel-${year}.pdf`)
-    } catch (e){ console.log(e)
-      alert('Erreur export rapport annuel') }
+    } catch (e) { console.log(e); alert('Erreur export rapport annuel') }
   }
 
   return (
@@ -321,7 +313,6 @@ const estimateAmount = (list, daysInMonth, workingDays) =>
       <Header title="Rapports"/>
       <div style={{ padding:'12px 16px' }}>
 
-        {/* Filtre mois */}
         <MonthPicker month={month} setMonth={setMonth} months={MONTHS}/>
 
         {/* Hero taux d'épargne */}
@@ -371,22 +362,16 @@ const estimateAmount = (list, daysInMonth, workingDays) =>
             <div style={{ fontWeight:700, fontSize:15, color:'#222', marginBottom:4 }}>
               Évolution des dépenses
             </div>
-            <div style={{ fontSize:11, color:'#aaa', marginBottom:14 }}>
-              6 derniers mois
-            </div>
+            <div style={{ fontSize:11, color:'#aaa', marginBottom:14 }}>6 derniers mois</div>
             <BarChart data={evoData} color="#6C5CE7"/>
           </Card>
         ) : (
           <ProCard
-            feature="evolution"
-            title="Évolution sur 6 mois"
-            icon={BarChart2}
+            feature="evolution" title="Évolution sur 6 mois" icon={BarChart2}
             onUpgrade={setProModal}
             preview={
               <div>
-                <div style={{ fontWeight:700, fontSize:15, color:'#222', marginBottom:14 }}>
-                  Évolution des dépenses
-                </div>
+                <div style={{ fontWeight:700, fontSize:15, color:'#222', marginBottom:14 }}>Évolution des dépenses</div>
                 <BarChart data={evoData} color="#6C5CE7"/>
               </div>
             }
@@ -405,20 +390,15 @@ const estimateAmount = (list, daysInMonth, workingDays) =>
                 { label:'Revenus',  curr: totalInc, diff: diffInc, neg: false },
               ].map(({ label, curr, diff, neg }) => (
                 <div key={label} style={{
-                  background:'#f9f9f9', borderRadius:10, padding:'12px',
-                  border:'1px solid #f0f0f0',
+                  background:'#f9f9f9', borderRadius:10, padding:'12px', border:'1px solid #f0f0f0',
                 }}>
                   <div style={{ fontSize:11, color:'#aaa', marginBottom:4 }}>{label}</div>
-                  <div style={{ fontSize:15, fontWeight:800, color:'#222', marginBottom:4 }}>
-                    {fmt(curr)}
-                  </div>
+                  <div style={{ fontSize:15, fontWeight:800, color:'#222', marginBottom:4 }}>{fmt(curr)}</div>
                   <div style={{
                     fontSize:11, fontWeight:700,
-                    color: diff === 0 ? '#aaa'
-                      : (neg ? diff > 0 : diff < 0) ? '#e74c3c' : '#00b894',
+                    color: diff === 0 ? '#aaa' : (neg ? diff > 0 : diff < 0) ? '#e74c3c' : '#00b894',
                   }}>
-                    {diff > 0 ? '+' : ''}{fmt(diff)}
-                    {' '}({diff > 0 ? '▲' : diff < 0 ? '▼' : '='})
+                    {diff > 0 ? '+' : ''}{fmt(diff)} ({diff > 0 ? '▲' : diff < 0 ? '▼' : '='})
                   </div>
                 </div>
               ))}
@@ -426,15 +406,11 @@ const estimateAmount = (list, daysInMonth, workingDays) =>
           </Card>
         ) : (
           <ProCard
-            feature="comparison"
-            title="Comparaison mois précédent"
-            icon={ArrowRight}
+            feature="comparison" title="Comparaison mois précédent" icon={ArrowRight}
             onUpgrade={setProModal}
             preview={
               <div>
-                <div style={{ fontWeight:700, fontSize:15, color:'#222', marginBottom:12 }}>
-                  vs mois précédent
-                </div>
+                <div style={{ fontWeight:700, fontSize:15, color:'#222', marginBottom:12 }}>vs mois précédent</div>
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
                   {['Dépenses','Revenus'].map(l => (
                     <div key={l} style={{ background:'#f9f9f9', borderRadius:10, padding:12 }}>
@@ -451,17 +427,15 @@ const estimateAmount = (list, daysInMonth, workingDays) =>
 
         {/* Revenus */}
         <Card>
-          <div style={{ fontWeight:700, fontSize:15, color:'#222', marginBottom:10 }}>
-            Revenus totaux
-          </div>
-          <div style={{ display:'flex', justifyContent:'space-between',
-            alignItems:'center', marginBottom:8 }}>
+          <div style={{ fontWeight:700, fontSize:15, color:'#222', marginBottom:10 }}>Revenus totaux</div>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
             <span style={{ fontSize:22, fontWeight:800, color:'#00b894' }}>
               {isIncEstimated ? '~' : ''}{fmt(totalInc)}
             </span>
             {isIncEstimated && (
-              <span style={{ fontSize:11, color:'#aaa', background:'#f5f5f5',
-                borderRadius:8, padding:'3px 8px' }}>estimation incluse</span>
+              <span style={{ fontSize:11, color:'#aaa', background:'#f5f5f5', borderRadius:8, padding:'3px 8px' }}>
+                estimation incluse
+              </span>
             )}
           </div>
           {totalInc > 0 && (
@@ -515,17 +489,15 @@ const estimateAmount = (list, daysInMonth, workingDays) =>
 
         {/* Dépenses */}
         <Card>
-          <div style={{ fontWeight:700, fontSize:15, color:'#222', marginBottom:10 }}>
-            Dépenses totales
-          </div>
-          <div style={{ display:'flex', justifyContent:'space-between',
-            alignItems:'center', marginBottom:8 }}>
+          <div style={{ fontWeight:700, fontSize:15, color:'#222', marginBottom:10 }}>Dépenses totales</div>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
             <span style={{ fontSize:22, fontWeight:800, color:'#e74c3c' }}>
               {isExpEstimated ? '~' : ''}{fmt(totalExp)}
             </span>
             {isExpEstimated && (
-              <span style={{ fontSize:11, color:'#aaa', background:'#f5f5f5',
-                borderRadius:8, padding:'3px 8px' }}>estimation incluse</span>
+              <span style={{ fontSize:11, color:'#aaa', background:'#f5f5f5', borderRadius:8, padding:'3px 8px' }}>
+                estimation incluse
+              </span>
             )}
           </div>
           {totalExp > 0 && (
@@ -579,12 +551,11 @@ const estimateAmount = (list, daysInMonth, workingDays) =>
 
         {/* ── PRO : Prévisions mois suivant ── */}
         {(() => {
-          const nextMonth = month === 12 ? 1 : month + 1
-          const nextYear  = month === 12 ? year + 1 : year
+          const nextMonth  = month === 12 ? 1 : month + 1
+          const nextYear   = month === 12 ? year + 1 : year
           const forecastExp = totalRecurExp + (punctualExp * 0.9)
           const forecastInc = totalRecurInc + (punctualInc * 1.0)
           const forecastBal = forecastInc - forecastExp
-
           return isPro ? (
             <Card>
               <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
@@ -611,15 +582,11 @@ const estimateAmount = (list, daysInMonth, workingDays) =>
             </Card>
           ) : (
             <ProCard
-              feature="forecast"
-              title="Prévisions mois suivant"
-              icon={TrendingUp}
+              feature="forecast" title="Prévisions mois suivant" icon={TrendingUp}
               onUpgrade={setProModal}
               preview={
                 <div>
-                  <div style={{ fontWeight:700, fontSize:15, color:'#222', marginBottom:12 }}>
-                    Prévisions — mois suivant
-                  </div>
+                  <div style={{ fontWeight:700, fontSize:15, color:'#222', marginBottom:12 }}>Prévisions — mois suivant</div>
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8 }}>
                     {['Revenus','Dépenses','Solde'].map(l => (
                       <div key={l} style={{ background:'#f9f9f9', borderRadius:10, padding:'10px 12px' }}>
@@ -701,15 +668,11 @@ const estimateAmount = (list, daysInMonth, workingDays) =>
           </Card>
         ) : (
           <ProCard
-            feature="annual"
-            title="Rapport annuel complet"
-            icon={Calendar}
+            feature="annual" title="Rapport annuel complet" icon={Calendar}
             onUpgrade={setProModal}
             preview={
               <div>
-                <div style={{ fontWeight:700, fontSize:15, color:'#222', marginBottom:12 }}>
-                  Bilan annuel {year}
-                </div>
+                <div style={{ fontWeight:700, fontSize:15, color:'#222', marginBottom:12 }}>Bilan annuel {year}</div>
                 <BarChart
                   data={Array.from({ length:12 }, (_, i) => ({
                     label: MONTHS[i]?.slice(0,3),

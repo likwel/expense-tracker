@@ -79,7 +79,7 @@ function PunctualCard({ i, onRemove, onEdit, fmt }) {
 }
 
 /* ─── Carte revenu récurrent ────────────────────────────────────── */
-function RecurringCard({ r, onToggle, onEdit, onRemove, fmt }) {
+function RecurringCard({ r, onToggle, onEdit, onRemove, fmt, isEffectivelyActive }) {
   const [expanded, setExpanded] = useState(false)
   const color = r.category?.color || '#00b894'
   return (
@@ -143,8 +143,8 @@ function RecurringCard({ r, onToggle, onEdit, onRemove, fmt }) {
             {expanded ? <><ChevronUp size={13}/> Moins</> : <><ChevronDown size={13}/> Détails</>}
           </button>
           <div style={{ display:'flex', gap:6 }}>
-            <button onClick={() => onToggle(r.id)} style={{ display:'flex', alignItems:'center', gap:4, padding:'5px 10px', borderRadius:8, border:'none', cursor:'pointer', background:r.isActive?'#E1F5EE':'#f5f5f5', fontSize:11, fontWeight:600, color:r.isActive?'#0F6E56':'#aaa' }}>
-              {r.isActive ? <><ToggleRight size={14}/> Actif</> : <><ToggleLeft size={14}/> Inactif</>}
+            <button onClick={() => onToggle(r.id)} style={{ display:'flex', alignItems:'center', gap:4, padding:'5px 10px', borderRadius:8, border:'none', cursor:'pointer', background:r.isActive && isEffectivelyActive?'#E1F5EE':'#f5f5f5', fontSize:11, fontWeight:600, color:r.isActive && isEffectivelyActive?'#0F6E56':'#f5b2b2' }}>
+              {r.isActive && isEffectivelyActive ? <><ToggleRight size={14}/> Actif</> : <><ToggleLeft size={14}/> Inactif</>}
             </button>
             <button onClick={() => onEdit(r)} style={{ display:'flex', alignItems:'center', gap:4, padding:'5px 10px', borderRadius:8, border:'none', cursor:'pointer', background:'#f5f5f5', fontSize:11, fontWeight:600, color:'#555' }}>
               <Pencil size={13}/> Modifier
@@ -201,7 +201,13 @@ export default function Incomes() {
     const end   = r.endDate ? new Date(r.endDate) : null
     return start <= mEnd && (!end || end >= mStart)
   })
-  const inactiveRec = recurItems.filter(r => !r.isActive)
+  // const inactiveRec = recurItems.filter(r => !r.isActive)
+
+  const inactiveRec = recurItems.filter(r => {
+    if (!r.isActive) return true
+    const end = r.endDate ? new Date(r.endDate) : null
+    return end && end < mStart  // actif mais terminé avant ce mois
+  })
 
   const daysInMonth = new Date(year, month, 0).getDate()
   const workingDays = Math.round(daysInMonth * 5 / 7)
@@ -503,13 +509,13 @@ export default function Incomes() {
                   {activeRec.length > 0 && (
                     <>
                       <div style={{ fontSize:11, fontWeight:700, color:'#aaa', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:8 }}>Actifs ({activeRec.length})</div>
-                      {activeRec.map(r => <RecurringCard key={r.id} r={r} onToggle={toggleRec} onEdit={openEditRecurring} onRemove={removeRec} fmt={fmt}/>)}
+                      {activeRec.map(r => <RecurringCard key={r.id} r={r} onToggle={toggleRec} onEdit={openEditRecurring} onRemove={removeRec} fmt={fmt} isEffectivelyActive ={true}/>)}
                     </>
                   )}
                   {inactiveRec.length > 0 && (
                     <>
                       <div style={{ fontSize:11, fontWeight:700, color:'#aaa', textTransform:'uppercase', letterSpacing:'0.5px', margin:'14px 0 8px' }}>Inactifs ({inactiveRec.length})</div>
-                      {inactiveRec.map(r => <RecurringCard key={r.id} r={r} onToggle={toggleRec} onEdit={openEditRecurring} onRemove={removeRec} fmt={fmt}/>)}
+                      {inactiveRec.map(r => <RecurringCard key={r.id} r={r} onToggle={toggleRec} onEdit={openEditRecurring} onRemove={removeRec} fmt={fmt} isEffectivelyActive ={false}/>)}
                     </>
                   )}
                 </>

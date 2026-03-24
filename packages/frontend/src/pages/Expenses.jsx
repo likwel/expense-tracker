@@ -81,7 +81,7 @@ function PunctualCard({ e, onEdit, onRemove, fmt }) {
 }
 
 /* ─── Carte dépense récurrente ──────────────────────────────────── */
-function RecurringCard({ item, onEdit, onToggle, onRemove, fmt }) {
+function RecurringCard({ item, onEdit, onToggle, onRemove, fmt, isEffectivelyActive }) {
   const color = item.category?.color || '#6C5CE7'
   return (
     <div style={{
@@ -136,10 +136,10 @@ function RecurringCard({ item, onEdit, onToggle, onRemove, fmt }) {
         <div style={{ display:'flex', justifyContent:'space-between', gap:6, marginTop:10, paddingTop:10, borderTop:'0.5px solid #f5f5f5' }}>
           <button onClick={() => onToggle(item.id)} style={{
             display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:8, border:'none', cursor:'pointer',
-            background: item.isActive ? '#E1F5EE' : '#f5f5f5', fontSize:11, fontWeight:600,
-            color: item.isActive ? '#0F6E56' : '#aaa',
+            background: item.isActive && isEffectivelyActive ? '#E1F5EE' : '#f5f5f5', fontSize:11, fontWeight:600,
+            color: item.isActive && isEffectivelyActive ? '#0F6E56' : '#f5b2b2',
           }}>
-            {item.isActive ? <><ToggleRight size={14}/>Actif</> : <><ToggleLeft size={14}/>Inactif</>}
+            {item.isActive && isEffectivelyActive ? <><ToggleRight size={14}/>Actif</> : <><ToggleLeft size={14}/>Inactif</>}
           </button>
           <div style={{ display:'flex', gap:5 }}>
             <button onClick={() => onEdit(item)} style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:8, border:'none', cursor:'pointer', background:'#f5f5f5', fontSize:11, fontWeight:600, color:'#555' }}>
@@ -329,13 +329,27 @@ export default function Expenses() {
   const punctual           = expenses.filter(e => !e.isRecurring).reduce((s,e) => s + Number(e.amount), 0)
   const recurringGenerated = expenses.filter(e =>  e.isRecurring).reduce((s,e) => s + Number(e.amount), 0)
 
-  // Stats récurrent
-  const activeRec   = recurItems.filter(i =>  i.isActive)
-  const inactiveRec = recurItems.filter(i => !i.isActive)
-
   // ✅ UTC + réactif au mois sélectionné
   const mStart      = new Date(Date.UTC(year, month - 1, 1))
   const mEnd        = new Date(Date.UTC(year, month, 0))
+
+  // Stats récurrent
+  // const activeRec   = recurItems.filter(i =>  i.isActive)
+  const activeRec   = recurItems.filter(r => {
+    if (!r.isActive) return false
+    const start = new Date(r.startDate)
+    const end   = r.endDate ? new Date(r.endDate) : null
+    return start <= mEnd && (!end || end >= mStart)
+  })
+
+
+  // const inactiveRec = recurItems.filter(i => !i.isActive)
+  const inactiveRec = recurItems.filter(r => {
+    if (!r.isActive) return true
+    const end = r.endDate ? new Date(r.endDate) : null
+    return end && end < mStart  // actif mais terminé avant ce mois
+  })
+
   const daysInMonth = mEnd.getDate()
   const workingDays = Math.round(daysInMonth * 5 / 7)
 
@@ -603,13 +617,13 @@ export default function Expenses() {
                   {activeRec.length>0 && (
                     <>
                       <div style={{ fontSize:11,fontWeight:700,color:'#aaa',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:8 }}>Actives ({activeRec.length})</div>
-                      {activeRec.map(item => <RecurringCard key={item.id} item={item} onEdit={openEditRecurring} onToggle={toggleRecurring} onRemove={removeRecurring} fmt={fmt}/>)}
+                      {activeRec.map(item => <RecurringCard key={item.id} item={item} onEdit={openEditRecurring} onToggle={toggleRecurring} onRemove={removeRecurring} fmt={fmt} isEffectivelyActive ={true}/>)}
                     </>
                   )}
                   {inactiveRec.length>0 && (
                     <>
                       <div style={{ fontSize:11,fontWeight:700,color:'#aaa',textTransform:'uppercase',letterSpacing:'0.5px',margin:'14px 0 8px' }}>Inactives ({inactiveRec.length})</div>
-                      {inactiveRec.map(item => <RecurringCard key={item.id} item={item} onEdit={openEditRecurring} onToggle={toggleRecurring} onRemove={removeRecurring} fmt={fmt}/>)}
+                      {inactiveRec.map(item => <RecurringCard key={item.id} item={item} onEdit={openEditRecurring} onToggle={toggleRecurring} onRemove={removeRecurring} fmt={fmt} isEffectivelyActive ={false}/>)}
                     </>
                   )}
                 </>

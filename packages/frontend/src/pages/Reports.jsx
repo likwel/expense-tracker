@@ -175,13 +175,16 @@ const download = (blob, filename) => {
 
 const filterActive = (list, year, month) => (list || []).filter(r => {
   if (!r.isActive) return false
-  const start  = new Date(r.startDate)
+  // ✅ Parser en UTC pour éviter le décalage de fuseau horaire
+  const start  = new Date(r.startDate) // ISO UTC depuis le backend
   const end    = r.endDate ? new Date(r.endDate) : null
   const mStart = new Date(Date.UTC(year, month - 1, 1))
-  const mEnd   = new Date(Date.UTC(year, month, 0))
-  // Exclure si endDate est dépassé (antérieur au début du mois sélectionné)
+  const mEnd   = new Date(Date.UTC(year, month, 0, 23, 59, 59))
+  // Exclure si pas encore commencé ce mois
+  if (start > mEnd) return false
+  // Exclure si terminé avant ce mois
   if (end && end < mStart) return false
-  return start <= mEnd
+  return true
 })
 
 /* ─── Page principale ───────────────────────────────────────────── */
@@ -216,24 +219,13 @@ export default function Reports() {
   const byCat        = summary?.byCategory        || []
 
   // ✅ même filtre que Expenses : juste isActive
-  const activeRecurExp = (recurExpList || []).filter(r => r.isActive)
-  const activeRecurInc = (recurIncList || []).filter(r => r.isActive)
+  // const activeRecurExp = (recurExpList || []).filter(r => r.isActive)
+  // const activeRecurInc = (recurIncList || []).filter(r => r.isActive)
+  const activeRecurExp = filterActive(recurExpList, year, month)
+  const activeRecurInc = filterActive(recurIncList, year, month)
+
   const daysInMonth    = mEnd.getDate()
   const workingDays    = Math.round(daysInMonth * 5 / 7)
-
-  console.log('=== DEBUG REPORT ===')
-  console.log('mois sélectionné:', month, year)
-  console.log('mStart:', mStart.toISOString(), '| mEnd:', mEnd.toISOString())
-  console.log('activeRecurExp:', activeRecurExp.map(r => ({
-    id: r.id, desc: r.description, freq: r.frequency,
-    dayType: r.dayType, amount: r.amount,
-    startDate: r.startDate, endDate: r.endDate,
-  })))
-  console.log('activeRecurInc:', activeRecurInc.map(r => ({
-    id: r.id, desc: r.description, freq: r.frequency,
-    dayType: r.dayType, amount: r.amount,
-    startDate: r.startDate, endDate: r.endDate,
-  })))
 
   const estimateAmount = (list, _mStart, _mEnd) => list.reduce((s, r) => {
     const amt  = Number(r.amount)

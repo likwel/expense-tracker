@@ -15,6 +15,7 @@ import api         from '../services/api'
 import { LucideIcon }  from '../utils/iconResolver'
 import { useFmt }  from '../hooks/useFmt'
 import { useAuth } from '../contexts/AuthContext'
+import { useOrg } from '../contexts/OrgContext'
 
 /* ─── Constantes ────────────────────────────────────────────────── */
 const now = new Date()
@@ -180,8 +181,12 @@ export default function Incomes() {
   const [filterCat, setFilterCat] = useState('')
   const [showFilter, setShowFilter] = useState(false)
 
-  const { data: incData,  refetch: refetchInc } = useApi('/incomes', { month, year, take:100 })
-  const { data: recList,  refetch: refetchRec } = useApi('/recurring-income')
+  
+  const { activeOrg } = useOrg()
+  const orgParam = activeOrg ? { orgId: activeOrg.id } : {}
+
+  const { data: incData,  refetch: refetchInc } = useApi('/incomes', { month, year, take:100, ...orgParam })
+  const { data: recList,  refetch: refetchRec } = useApi('/recurring-income', orgParam)
   const { data: cats }                          = useApi('/categories')
 
   const incomes   = incData?.data || []

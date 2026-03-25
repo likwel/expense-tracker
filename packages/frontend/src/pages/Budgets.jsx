@@ -15,6 +15,7 @@ import MonthPicker from '../components/ui/MonthPicker'
 import { LucideIcon } from '../utils/iconResolver'
 import { useFmt }  from '../hooks/useFmt'
 import { useAuth } from '../contexts/AuthContext'
+import { useOrg } from '../contexts/OrgContext'
 
 const now = new Date()
 
@@ -206,16 +207,18 @@ export default function Budgets() {
   const [filterAlert, setFilterAlert] = useState(false)
   const [showSuggestions, setShowSuggestions] = useState(false)
 
+  const { activeOrg } = useOrg()
+  
   const { fmt }  = useFmt()
   const { user } = useAuth()
   const currency = user?.currency || 'MGA'
 
-  const { data: budgets, refetch }     = useApi('/budgets', { month, year })
+  const { data: budgets, refetch }     = useApi('/budgets', { month, year, orgId: activeOrg?.id })
   const { data: cats }                 = useApi('/categories')
   // Dépenses des 3 derniers mois pour suggestions
   const prevMonth = month===1 ? 12 : month-1
   const prevYear  = month===1 ? year-1 : year
-  const { data: prevExp } = useApi('/reports/summary', { month: prevMonth, year: prevYear })
+  const { data: prevExp } = useApi('/reports/summary', { month: prevMonth, year: prevYear, orgId: activeOrg?.id })
 
   const list    = budgets || []
   const expCats = (cats || []).filter(c => c.type === 'expense')

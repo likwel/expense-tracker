@@ -1,10 +1,9 @@
-// ─── Définition des limites par plan ──────────────────────────────────────────
-export const PLAN_LIMITS = {
+const PLAN_LIMITS = {
   free: {
-    transactionsPerMonth: 30,   // expenses + incomes combinés
+    transactionsPerMonth: 30,
     categories:           3,
-    budgets:              0,    // pas de budget
-    recurring:            0,    // pas de récurrents
+    budgets:              0,
+    recurring:            0,
     reports:             'basic',
     export:              false,
     multiCurrency:       false,
@@ -29,27 +28,18 @@ export const PLAN_LIMITS = {
   },
 }
 
-// ─── Résoudre le plan effectif (trial compris) ────────────────────────────────
-export function getEffectivePlan(user) {
+function getEffectivePlan(user) {
   const now = new Date()
-
-  // Pendant la période d'essai → accès Pro
   if (user.trialEndAt && now <= new Date(user.trialEndAt)) return 'pro'
-
-  // Plan payant expiré → retombe sur free
-  if (user.planEndAt && now > new Date(user.planEndAt)) return 'free'
-
+  if (user.planEndAt  && now >  new Date(user.planEndAt))  return 'free'
   return user.plan || 'free'
 }
 
-export function getLimits(user) {
+function getLimits(user) {
   return PLAN_LIMITS[getEffectivePlan(user)]
 }
 
-// ─── Vérifications ────────────────────────────────────────────────────────────
-
-// Transactions ce mois-ci (expenses + incomes)
-export async function canAddTransaction(prisma, userId, user) {
+async function canAddTransaction(prisma, userId, user) {
   const limits = getLimits(user)
   if (limits.transactionsPerMonth === Infinity) return { ok: true }
 
@@ -73,8 +63,7 @@ export async function canAddTransaction(prisma, userId, user) {
   return { ok: true, remaining: limits.transactionsPerMonth - total }
 }
 
-// Catégories
-export async function canAddCategory(prisma, userId, user) {
+async function canAddCategory(prisma, userId, user) {
   const limits = getLimits(user)
   if (limits.categories === Infinity) return { ok: true }
 
@@ -89,23 +78,31 @@ export async function canAddCategory(prisma, userId, user) {
   return { ok: true, remaining: limits.categories - count }
 }
 
-// Budgets
-export function canUseBudgets(user) {
+function canUseBudgets(user) {
   const limits = getLimits(user)
   if (limits.budgets === 0) return { ok: false, reason: 'Les budgets sont réservés au plan Pro.', upgrade: true }
   return { ok: true }
 }
 
-// Récurrents
-export function canUseRecurring(user) {
+function canUseRecurring(user) {
   const limits = getLimits(user)
   if (limits.recurring === 0) return { ok: false, reason: 'Les dépenses récurrentes sont réservées au plan Pro.', upgrade: true }
   return { ok: true }
 }
 
-// Export
-export function canExport(user) {
+function canExport(user) {
   const limits = getLimits(user)
   if (!limits.export) return { ok: false, reason: "L'export est réservé au plan Pro.", upgrade: true }
   return { ok: true }
+}
+
+module.exports = {
+  PLAN_LIMITS,
+  getEffectivePlan,
+  getLimits,
+  canAddTransaction,
+  canAddCategory,
+  canUseBudgets,
+  canUseRecurring,
+  canExport,
 }

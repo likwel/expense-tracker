@@ -16,6 +16,8 @@ import { LucideIcon }  from '../utils/iconResolver'
 import { useFmt }  from '../hooks/useFmt'
 import { useAuth } from '../contexts/AuthContext'
 
+import { useOrg } from '../contexts/OrgContext'
+
 /* ─── Constantes ────────────────────────────────────────────────── */
 const now  = new Date()
 const FREQ_LABEL  = { daily:'Quotidien', weekly:'Hebdomadaire', monthly:'Mensuel' }
@@ -315,8 +317,13 @@ export default function Expenses() {
   const [saving, setSaving] = useState(false)
 
   // Data
-  const { data: expData,   refetch: refetchExp } = useApi('/expenses', { month, year, take:100 })
-  const { data: recurList, refetch: refetchRec } = useApi('/recurring')
+  
+  const { activeOrg } = useOrg()
+
+  const orgParam = activeOrg ? { orgId: activeOrg.id } : {}
+
+  const { data: expData,   refetch: refetchExp } = useApi('/expenses',          { month, year, take: 100, ...orgParam })
+  const { data: recurList, refetch: refetchRec } = useApi('/recurring',         orgParam)
   const { data: cats }                           = useApi('/categories')
   const { data: holidays }                       = useApi('/recurring/holidays', { year })
 

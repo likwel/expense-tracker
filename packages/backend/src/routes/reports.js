@@ -14,24 +14,14 @@ const dateRange = (month, year) => ({
   lte: new Date(Number(year), Number(month),     0),
 })
 
-// ── Symboles de devises ───────────────────────────────────────────
 const CURRENCY_SYMBOLS = {
   MGA: 'Ar', EUR: '€',  USD: '$',  GBP: '£',
   CHF: 'Fr', JPY: '¥',  CAD: 'CA$', MAD: 'MAD',
   XOF: 'CFA', MUR: 'Rs', CNY: 'CNY',
 }
-
-// Devises où le symbole est en préfixe
 const PREFIX_CURRENCIES = new Set(['EUR','USD','GBP','CHF','CAD'])
+const NO_DECIMAL        = new Set(['JPY','MGA','XOF'])
 
-// Devises sans décimales
-const NO_DECIMAL = new Set(['JPY','MGA','XOF'])
-
-/**
- * Formate un montant selon la devise
- * ex: fmtCurrency(15000, 'MGA') → '15 000 Ar'
- *     fmtCurrency(4.99, 'USD')  → '$4.99'
- */
 function fmtCurrency(amount, currency = 'MGA') {
   const n      = Number(amount || 0)
   const sym    = CURRENCY_SYMBOLS[currency] || currency
@@ -39,23 +29,16 @@ function fmtCurrency(amount, currency = 'MGA') {
   const num    = noDecim
     ? Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
     : n.toLocaleString('fr-FR', { minimumFractionDigits:2, maximumFractionDigits:2 })
-
-  return PREFIX_CURRENCIES.has(currency)
-    ? `${sym}${num}`
-    : `${num} ${sym}`
+  return PREFIX_CURRENCIES.has(currency) ? `${sym}${num}` : `${num} ${sym}`
 }
 
-// Format Excel (numFmt string)
 function excelNumFmt(currency = 'MGA') {
   const sym     = CURRENCY_SYMBOLS[currency] || currency
   const noDecim = NO_DECIMAL.has(currency)
   const dec     = noDecim ? '0' : '0.00'
-  return PREFIX_CURRENCIES.has(currency)
-    ? `"${sym}"#,##${dec}`
-    : `#,##${dec} "${sym}"`
+  return PREFIX_CURRENCIES.has(currency) ? `"${sym}"#,##${dec}` : `#,##${dec} "${sym}"`
 }
 
-// ── Cache taux de change (5 min) ──────────────────────────────────
 const rateCache = new Map()
 async function getRate(from, to) {
   if (from === to) return 1
@@ -70,7 +53,6 @@ async function getRate(from, to) {
   return rate
 }
 
-// ── Helper récupérer devise + fonction de conversion ──────────────
 async function getUserCurrency(userId) {
   const user = await prisma.user.findUnique({
     where:  { id: userId },
@@ -78,24 +60,14 @@ async function getUserCurrency(userId) {
   })
   const currency        = user?.currency        || 'MGA'
   const defaultCurrency = user?.defaultCurrency || 'MGA'
-
-  // Si les devises sont identiques → pas de conversion
   let conversionRate = 1
   if (currency !== defaultCurrency) {
-    try {
-      conversionRate = await getRate(defaultCurrency, currency)
-    } catch {
-      conversionRate = 1 // dégradé gracieux
-    }
+    try { conversionRate = await getRate(defaultCurrency, currency) } catch { conversionRate = 1 }
   }
-
-  // Convertit un montant stocké en defaultCurrency → currency d'affichage
   const convert = (amount) => Number(amount || 0) * conversionRate
-
   return { currency, defaultCurrency, convert }
 }
 
-// ── Helper estimation récurrents ──────────────────────────────────
 function estimateRecurring(list, month, year) {
   const daysInMonth = new Date(year, month, 0).getDate()
   const workingDays = Math.round(daysInMonth * 5 / 7)
@@ -118,17 +90,32 @@ function estimateRecurring(list, month, year) {
     }, 0)
 }
 
-// ── Helper totaux d'un mois ───────────────────────────────────────
-async function getMonthTotals(userId, month, year) {
-  const dr = dateRange(month, year)
+// ── Helper : récupérer les userIds selon orgId ────────────────────
+const getOrgMemberIds = async (userId, orgId) => {
+  const member = await prisma.orgMember.findFirst({
+    where: { organizationId: Number(orgId), userId },
+  })
+  if (!member) throw { status: 403, message: 'Accès refusé à cette organisation' }
+  const members = await prisma.orgMember.findMany({
+    where:  { organizationId: Number(orgId) },
+    select: { userId: true },
+  })
+  return members.map(m => m.userId)
+}
+
+// ── Helper totaux d'un mois (supporte plusieurs userIds) ──────────
+async function getMonthTotals(userIds, month, year) {
+  const dr    = dateRange(month, year)
+  const where = { userId: { in: userIds } }
+
   const [expAgg, incAgg, recurExpAgg, recurIncAgg, allRecurExp, allRecurInc] =
     await prisma.$transaction([
-      prisma.expense.aggregate({ where: { userId, date: dr }, _sum: { amount: true } }),
-      prisma.income.aggregate({  where: { userId, date: dr }, _sum: { amount: true } }),
-      prisma.expense.aggregate({ where: { userId, date: dr, isRecurring: true }, _sum: { amount: true } }),
-      prisma.income.aggregate({  where: { userId, date: dr, isRecurring: true }, _sum: { amount: true } }),
-      prisma.recurringExpense.findMany({ where: { userId } }),
-      prisma.recurringIncome.findMany({  where: { userId } }),
+      prisma.expense.aggregate({ where: { ...where, date: dr }, _sum: { amount: true } }),
+      prisma.income.aggregate({  where: { ...where, date: dr }, _sum: { amount: true } }),
+      prisma.expense.aggregate({ where: { ...where, date: dr, isRecurring: true }, _sum: { amount: true } }),
+      prisma.income.aggregate({  where: { ...where, date: dr, isRecurring: true }, _sum: { amount: true } }),
+      prisma.recurringExpense.findMany({ where }),
+      prisma.recurringIncome.findMany({  where }),
     ])
 
   const punctualExp   = Number(expAgg._sum.amount || 0) - Number(recurExpAgg._sum.amount || 0)
@@ -156,24 +143,29 @@ async function getMonthTotals(userId, month, year) {
 
 // ── GET /summary ──────────────────────────────────────────────────
 router.get('/summary', async (req, res) => {
-  const { month, year } = req.query
+  const { month, year, orgId } = req.query
   const dr = dateRange(month, year)
   try {
+    const userIds = orgId
+      ? await getOrgMemberIds(req.user.id, orgId)
+      : [req.user.id]
+    const where = { userId: { in: userIds } }
+
     const [
       expAgg, incAgg, byCat,
       punctualExpAgg, recurringExpAgg,
       punctualIncAgg, recurringIncAgg,
       allRecurExp, allRecurInc,
     ] = await prisma.$transaction([
-      prisma.expense.aggregate({ where: { userId: req.user.id, date: dr }, _sum: { amount: true } }),
-      prisma.income.aggregate({  where: { userId: req.user.id, date: dr }, _sum: { amount: true } }),
-      prisma.expense.groupBy({ by: ['categoryId'], where: { userId: req.user.id, date: dr }, _sum: { amount: true }, orderBy: { _sum: { amount: 'desc' } } }),
-      prisma.expense.aggregate({ where: { userId: req.user.id, date: dr, isRecurring: false }, _sum: { amount: true } }),
-      prisma.expense.aggregate({ where: { userId: req.user.id, date: dr, isRecurring: true  }, _sum: { amount: true } }),
-      prisma.income.aggregate({  where: { userId: req.user.id, date: dr, isRecurring: false }, _sum: { amount: true } }),
-      prisma.income.aggregate({  where: { userId: req.user.id, date: dr, isRecurring: true  }, _sum: { amount: true } }),
-      prisma.recurringExpense.findMany({ where: { userId: req.user.id } }),
-      prisma.recurringIncome.findMany({  where: { userId: req.user.id } }),
+      prisma.expense.aggregate({ where: { ...where, date: dr }, _sum: { amount: true } }),
+      prisma.income.aggregate({  where: { ...where, date: dr }, _sum: { amount: true } }),
+      prisma.expense.groupBy({ by: ['categoryId'], where: { ...where, date: dr }, _sum: { amount: true }, orderBy: { _sum: { amount: 'desc' } } }),
+      prisma.expense.aggregate({ where: { ...where, date: dr, isRecurring: false }, _sum: { amount: true } }),
+      prisma.expense.aggregate({ where: { ...where, date: dr, isRecurring: true  }, _sum: { amount: true } }),
+      prisma.income.aggregate({  where: { ...where, date: dr, isRecurring: false }, _sum: { amount: true } }),
+      prisma.income.aggregate({  where: { ...where, date: dr, isRecurring: true  }, _sum: { amount: true } }),
+      prisma.recurringExpense.findMany({ where }),
+      prisma.recurringIncome.findMany({  where }),
     ])
 
     const cats   = await prisma.category.findMany({ where: { id: { in: byCat.map(b => b.categoryId).filter(Boolean) } } })
@@ -200,24 +192,32 @@ router.get('/summary', async (req, res) => {
       punctualIncomes:  punctualInc,   recurringIncomes:  recurringInc,  isIncEstimated: estimatedRecurInc > 0,
       byCategory: byCat.map(b => ({ ...catMap[b.categoryId], total: Number(b._sum.amount) })),
     })
-  } catch (e) { res.status(500).json({ error: e.message }) }
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message })
+    res.status(500).json({ error: e.message })
+  }
 })
 
 // ── GET /monthly ──────────────────────────────────────────────────
 router.get('/monthly', async (req, res) => {
-  const { year } = req.query
+  const { year, orgId } = req.query
   try {
+    const userIds = orgId
+      ? await getOrgMemberIds(req.user.id, orgId)
+      : [req.user.id]
+
     const result = await Promise.all(
       Array.from({ length: 12 }, (_, i) => i + 1).map(async m => {
-        const dr = dateRange(m, year)
+        const dr    = dateRange(m, year)
+        const where = { userId: { in: userIds } }
         const [expAgg, incAgg, recurExpAgg, recurIncAgg, allRecurExp, allRecurInc] =
           await prisma.$transaction([
-            prisma.expense.aggregate({ where: { userId: req.user.id, date: dr }, _sum: { amount: true } }),
-            prisma.income.aggregate({  where: { userId: req.user.id, date: dr }, _sum: { amount: true } }),
-            prisma.expense.aggregate({ where: { userId: req.user.id, date: dr, isRecurring: true }, _sum: { amount: true } }),
-            prisma.income.aggregate({  where: { userId: req.user.id, date: dr, isRecurring: true }, _sum: { amount: true } }),
-            prisma.recurringExpense.findMany({ where: { userId: req.user.id } }),
-            prisma.recurringIncome.findMany({  where: { userId: req.user.id } }),
+            prisma.expense.aggregate({ where: { ...where, date: dr }, _sum: { amount: true } }),
+            prisma.income.aggregate({  where: { ...where, date: dr }, _sum: { amount: true } }),
+            prisma.expense.aggregate({ where: { ...where, date: dr, isRecurring: true }, _sum: { amount: true } }),
+            prisma.income.aggregate({  where: { ...where, date: dr, isRecurring: true }, _sum: { amount: true } }),
+            prisma.recurringExpense.findMany({ where }),
+            prisma.recurringIncome.findMany({  where }),
           ])
         const punctualExp = Number(expAgg._sum.amount || 0) - Number(recurExpAgg._sum.amount || 0)
         const genRecurExp = Number(recurExpAgg._sum.amount || 0)
@@ -237,29 +237,44 @@ router.get('/monthly', async (req, res) => {
       })
     )
     res.json(result)
-  } catch (e) { res.status(500).json({ error: e.message }) }
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message })
+    res.status(500).json({ error: e.message })
+  }
 })
 
 // ── GET /evolution ────────────────────────────────────────────────
 router.get('/evolution', async (req, res) => {
   const refMonth = Number(req.query.month) || new Date().getMonth() + 1
   const refYear  = Number(req.query.year)  || new Date().getFullYear()
+  const { orgId } = req.query
   try {
+    const userIds = orgId
+      ? await getOrgMemberIds(req.user.id, orgId)
+      : [req.user.id]
+
     const months = Array.from({ length: 12 }, (_, i) => {
       let m = refMonth - (11 - i), y = refYear
       if (m <= 0) { m += 12; y -= 1 }
       return { m, y }
     })
-    const result = await Promise.all(months.map(({ m, y }) => getMonthTotals(req.user.id, m, y)))
+    const result = await Promise.all(months.map(({ m, y }) => getMonthTotals(userIds, m, y)))
     res.json({ months: result.map((r, i) => ({ ...r, year: months[i].y, label: MONTHS_FR[months[i].m - 1].slice(0, 3) })) })
-  } catch (e) { res.status(500).json({ error: e.message }) }
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message })
+    res.status(500).json({ error: e.message })
+  }
 })
 
 // ── GET /annual ───────────────────────────────────────────────────
 router.get('/annual', async (req, res) => {
-  const { year } = req.query
+  const { year, orgId } = req.query
   try {
-    const months    = await Promise.all(Array.from({ length: 12 }, (_, i) => i + 1).map(m => getMonthTotals(req.user.id, m, year)))
+    const userIds = orgId
+      ? await getOrgMemberIds(req.user.id, orgId)
+      : [req.user.id]
+
+    const months    = await Promise.all(Array.from({ length: 12 }, (_, i) => i + 1).map(m => getMonthTotals(userIds, m, year)))
     const totalIncomes  = months.reduce((s, m) => s + m.totalIncomes,  0)
     const totalExpenses = months.reduce((s, m) => s + m.totalExpenses, 0)
     const balance       = totalIncomes - totalExpenses
@@ -272,16 +287,24 @@ router.get('/annual', async (req, res) => {
       bestMonth:  { ...bestMonth,  label: MONTHS_FR[bestMonth.month  - 1] },
       worstMonth: { ...worstMonth, label: MONTHS_FR[worstMonth.month - 1] },
     })
-  } catch (e) { res.status(500).json({ error: e.message }) }
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message })
+    res.status(500).json({ error: e.message })
+  }
 })
 
 // ── GET /export/pdf ───────────────────────────────────────────────
 router.get('/export/pdf', async (req, res) => {
-  const { month, year } = req.query
+  const { month, year, orgId } = req.query
   try {
     const { currency, convert } = await getUserCurrency(req.user.id)
     const fmt = n => fmtCurrency(convert(n), currency)
     const sym = CURRENCY_SYMBOLS[currency] || currency
+
+    const userIds = orgId
+      ? await getOrgMemberIds(req.user.id, orgId)
+      : [req.user.id]
+    const where = { userId: { in: userIds } }
 
     const daysInMonth = new Date(year, month, 0).getDate()
     const workingDays = Math.round(daysInMonth * 5 / 7)
@@ -302,18 +325,18 @@ router.get('/export/pdf', async (req, res) => {
     }, 0)
 
     const [expenses, incomes, allRecurExp, allRecurInc] = await Promise.all([
-      prisma.expense.findMany({ where: { userId: req.user.id, date: dateRange(month, year) }, include: { category: { select: { name: true } } }, orderBy: { date: 'asc' } }),
-      prisma.income.findMany({  where: { userId: req.user.id, date: dateRange(month, year) }, include: { category: { select: { name: true } } }, orderBy: { date: 'asc' } }),
-      prisma.recurringExpense.findMany({ where: { userId: req.user.id } }),
-      prisma.recurringIncome.findMany({  where: { userId: req.user.id } }),
+      prisma.expense.findMany({ where: { ...where, date: dateRange(month, year) }, include: { category: { select: { name: true } } }, orderBy: { date: 'asc' } }),
+      prisma.income.findMany({  where: { ...where, date: dateRange(month, year) }, include: { category: { select: { name: true } } }, orderBy: { date: 'asc' } }),
+      prisma.recurringExpense.findMany({ where }),
+      prisma.recurringIncome.findMany({  where }),
     ])
 
     const activeRecurExp    = filterActive(allRecurExp)
     const activeRecurInc    = filterActive(allRecurInc)
     const generatedRecurExp = expenses.filter(e => e.recurringExpenseId != null).reduce((s,e) => s + Number(e.amount), 0)
     const generatedRecurInc = incomes.filter(i => i.recurringIncomeId  != null).reduce((s,i) => s + Number(i.amount), 0)
-    const recurExp  = generatedRecurExp > 0 ? generatedRecurExp : estimateRec(activeRecurExp)
-    const recurInc  = generatedRecurInc > 0 ? generatedRecurInc : estimateRec(activeRecurInc)
+    const recurExp    = generatedRecurExp > 0 ? generatedRecurExp : estimateRec(activeRecurExp)
+    const recurInc    = generatedRecurInc > 0 ? generatedRecurInc : estimateRec(activeRecurInc)
     const punctualExp = expenses.reduce((s,e) => s + Number(e.amount), 0) - generatedRecurExp
     const punctualInc = incomes.reduce((s,i)  => s + Number(i.amount), 0) - generatedRecurInc
     const totalExpFull = punctualExp + recurExp
@@ -407,18 +430,21 @@ router.get('/export/pdf', async (req, res) => {
 
 // ── GET /export/annual/pdf ────────────────────────────────────────
 router.get('/export/annual/pdf', async (req, res) => {
-  const { year } = req.query
+  const { year, orgId } = req.query
   try {
     const { currency, convert } = await getUserCurrency(req.user.id)
     const fmt = n => fmtCurrency(convert(n), currency)
 
-    const months   = await Promise.all(Array.from({ length: 12 }, (_, i) => i + 1).map(m => getMonthTotals(req.user.id, m, year)))
+    const userIds = orgId
+      ? await getOrgMemberIds(req.user.id, orgId)
+      : [req.user.id]
+
+    const months   = await Promise.all(Array.from({ length: 12 }, (_, i) => i + 1).map(m => getMonthTotals(userIds, m, year)))
     const totalInc = months.reduce((s, m) => s + m.totalIncomes,  0)
     const totalExp = months.reduce((s, m) => s + m.totalExpenses, 0)
     const balance  = totalInc - totalExp
     const saving   = totalInc > 0 ? Math.round((balance / totalInc) * 100) : 0
 
-    // 2. Créer le PDF seulement après tous les awaits
     const doc = new PDFDoc({ margin:50, size:'A4', bufferPages:true })
     const PW=495, L=50
 
@@ -496,17 +522,22 @@ router.get('/export/annual/pdf', async (req, res) => {
 
 // ── GET /export/excel ─────────────────────────────────────────────
 router.get('/export/excel', async (req, res) => {
-  const { month, year } = req.query
+  const { month, year, orgId } = req.query
   try {
     const { currency, convert } = await getUserCurrency(req.user.id)
     const numFmt = excelNumFmt(currency)
     const sym    = CURRENCY_SYMBOLS[currency] || currency
 
+    const userIds = orgId
+      ? await getOrgMemberIds(req.user.id, orgId)
+      : [req.user.id]
+    const where = { userId: { in: userIds } }
+
     const [expenses, incomes, allRecurExp, allRecurInc] = await Promise.all([
-      prisma.expense.findMany({ where: { userId: req.user.id, date: dateRange(month, year) }, include: { category: { select: { name: true } } }, orderBy: { date: 'asc' } }),
-      prisma.income.findMany({  where: { userId: req.user.id, date: dateRange(month, year) }, include: { category: { select: { name: true } } }, orderBy: { date: 'asc' } }),
-      prisma.recurringExpense.findMany({ where: { userId: req.user.id } }),
-      prisma.recurringIncome.findMany({  where: { userId: req.user.id } }),
+      prisma.expense.findMany({ where: { ...where, date: dateRange(month, year) }, include: { category: { select: { name: true } } }, orderBy: { date: 'asc' } }),
+      prisma.income.findMany({  where: { ...where, date: dateRange(month, year) }, include: { category: { select: { name: true } } }, orderBy: { date: 'asc' } }),
+      prisma.recurringExpense.findMany({ where }),
+      prisma.recurringIncome.findMany({  where }),
     ])
 
     const generatedRecurExp = expenses.filter(e => e.recurringExpenseId != null).reduce((s,e) => s + Number(e.amount), 0)
@@ -515,7 +546,6 @@ router.get('/export/excel', async (req, res) => {
     const recurInc    = generatedRecurInc > 0 ? generatedRecurInc : estimateRecurring(allRecurInc, month, year)
     const punctualExp = expenses.reduce((s,e) => s + Number(e.amount), 0) - generatedRecurExp
     const punctualInc = incomes.reduce((s,i)  => s + Number(i.amount), 0) - generatedRecurInc
-    // Convertir vers currency d'affichage
     const totalExp    = convert(punctualExp + recurExp)
     const totalInc    = convert(punctualInc + recurInc)
     const cPunctualExp = convert(punctualExp)
@@ -534,7 +564,6 @@ router.get('/export/excel', async (req, res) => {
     const lAlign = { horizontal:'left',   vertical:'middle' }
     const cAlign = { horizontal:'center', vertical:'middle' }
 
-    // Feuille Résumé
     const wsS = wb.addWorksheet('Résumé', { tabColor:{ argb:'FF444444' } })
     wsS.columns = [{ key:'l', width:34 }, { key:'v', width:22 }]
     wsS.mergeCells('A1:B1')
@@ -546,7 +575,7 @@ router.get('/export/excel', async (req, res) => {
     const sRow = (label, value, bold=false, bg=null) => {
       wsS.addRow({ l:label, v:value }); const r=wsS.lastRow; r.height=18
       r.getCell(1).font={bold,size:10}; r.getCell(1).alignment=lAlign; r.getCell(1).border=allBdr
-      r.getCell(2).value=value; r.getCell(2).numFmt=numFmt  // ← devise dynamique
+      r.getCell(2).value=value; r.getCell(2).numFmt=numFmt
       r.getCell(2).font={bold,size:10}; r.getCell(2).alignment=rAlign; r.getCell(2).border=allBdr
       if (bg) { r.getCell(1).fill=hFill(bg); r.getCell(2).fill=hFill(bg) }
     }
@@ -570,7 +599,7 @@ router.get('/export/excel', async (req, res) => {
         const bg=i%2===0?'FFFFFFFF':'FFF9F9F9'
         dr.eachCell(c => { c.fill=hFill(bg); c.font={size:10}; c.border=allBdr })
         dr.getCell(4).font={size:10,color:{argb:r.isRecurring?'FF6C5CE7':'FF888888'}}
-        dr.getCell(5).numFmt=numFmt  // ← devise dynamique
+        dr.getCell(5).numFmt=numFmt
         dr.getCell(5).font={bold:true,size:10}; dr.getCell(5).alignment=rAlign
       })
       ws.addRow(['','','','TOTAL',totalVal]); const tr=ws.lastRow; tr.height=20
@@ -586,6 +615,5 @@ router.get('/export/excel', async (req, res) => {
     res.status(500).json({ error: e.message })
   }
 })
-
 
 module.exports = router

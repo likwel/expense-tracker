@@ -1,10 +1,10 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { authApi } from '../services/api'
 import { setRates } from '../utils/format'
+import { resetNotifications } from '../hooks/useNotifications'
 
 export const AuthContext = createContext(null)
 
-// ── Persistance localStorage ──────────────────────────────────────
 function saveUser(user) {
   if (user) localStorage.setItem('user', JSON.stringify(user))
   else      localStorage.removeItem('user')
@@ -16,12 +16,11 @@ function loadUser() {
 }
 
 export function AuthProvider({ children }) {
-  // Initialiser depuis localStorage pour éviter le flash de contenu
-  const [user,      setUserState] = useState(loadUser)
-  const [loading,   setLoading]   = useState(true)
+  const [user,       setUserState]  = useState(loadUser)
+  const [loading,    setLoading]    = useState(true)
   const [ratesReady, setRatesReady] = useState(false)
+  const ratesFetchedFor = useRef(null) // ✅ guard taux de change
 
-  // ── setUser — met à jour state + localStorage ─────────────────
   const setUser = useCallback((updater) => {
     setUserState(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater
@@ -30,25 +29,28 @@ export function AuthProvider({ children }) {
     })
   }, [])
 
-  // ── Recharger l'user depuis l'API au montage ──────────────────
+  // ── Charger l'user au montage ─────────────────────────────────
   useEffect(() => {
     const token = localStorage.getItem('token')
-    if (!token) { setLoading(false); return }
+    if (!token) { setLoading(false); setRatesReady(true); return }
     authApi.me()
-      .then(r => {
-        setUser(r.data)   // met à jour state + localStorage avec données fraîches
-      })
+      .then(r => setUser(r.data))
       .catch(() => {
         localStorage.removeItem('token')
         saveUser(null)
         setUserState(null)
       })
       .finally(() => setLoading(false))
-  }, [])
+  }, []) // ✅ une seule fois
 
-  // ── Charger les taux dès que l'user est connu ────────────────
+  // ── Charger les taux quand la devise de base change ───────────
   useEffect(() => {
     const base = user?.defaultCurrency || 'MGA'
+
+    // ✅ Ne pas refetch si déjà chargé pour cette devise
+    if (ratesFetchedFor.current === base) return
+    ratesFetchedFor.current = base
+
     fetch(`https://open.er-api.com/v6/latest/${base}`)
       .then(r => r.json())
       .then(d => {
@@ -65,8 +67,9 @@ export function AuthProvider({ children }) {
         }
       })
       .catch(() => {})
-      .finally(() => setRatesReady(true))   // ← marque les taux comme prêts
+      .finally(() => setRatesReady(true))
   }, [user?.defaultCurrency])
+
   const login = async (credentials) => {
     const { data } = await authApi.login(credentials)
     localStorage.setItem('token', data.token)
@@ -74,7 +77,6 @@ export function AuthProvider({ children }) {
     return data
   }
 
-  // ── Register ──────────────────────────────────────────────────
   const register = async (credentials) => {
     const { data } = await authApi.register(credentials)
     localStorage.setItem('token', data.token)
@@ -82,11 +84,13 @@ export function AuthProvider({ children }) {
     return data
   }
 
-  // ── Logout ────────────────────────────────────────────────────
   const logout = () => {
     localStorage.removeItem('token')
+    localStorage.removeItem('activeOrgId')
+    resetNotifications()
     saveUser(null)
     setUserState(null)
+    ratesFetchedFor.current = null // ✅ reset guard taux
   }
 
   return (

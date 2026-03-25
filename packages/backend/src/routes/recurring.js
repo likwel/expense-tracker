@@ -21,16 +21,37 @@ const schema = Joi.object({
 
 const catSelect = { category: { select: { name:true, icon:true, color:true } } }
 
+// ── Helper : récupérer les userIds selon orgId ────────────────────
+const getOrgMemberIds = async (userId, orgId) => {
+  const member = await prisma.orgMember.findFirst({
+    where: { organizationId: Number(orgId), userId },
+  })
+  if (!member) throw { status: 403, message: 'Accès refusé à cette organisation' }
+  const members = await prisma.orgMember.findMany({
+    where:  { organizationId: Number(orgId) },
+    select: { userId: true },
+  })
+  return members.map(m => m.userId)
+}
+
 // ── GET / ─────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
+  const { orgId } = req.query
   try {
+    const userIds = orgId
+      ? await getOrgMemberIds(req.user.id, orgId)
+      : [req.user.id]
+
     const data = await prisma.recurringExpense.findMany({
-      where:   { userId: req.user.id },
+      where:   { userId: { in: userIds } },
       include: catSelect,
       orderBy: { createdAt: 'desc' },
     })
     res.json(data)
-  } catch (e) { res.status(500).json({ error: e.message }) }
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message })
+    res.status(500).json({ error: e.message })
+  }
 })
 
 // ── POST / ────────────────────────────────────────────────────────
@@ -43,7 +64,7 @@ router.post('/', validate(schema), async (req, res) => {
       data: {
         ...req.body,
         userId:    req.user.id,
-        amount:    amountInBase,          // ← stocké en defaultCurrency
+        amount:    amountInBase,
         startDate: new Date(req.body.startDate),
         endDate:   req.body.endDate ? new Date(req.body.endDate) : null,
       },
@@ -63,7 +84,7 @@ router.put('/:id', validate(schema), async (req, res) => {
       where: { id: Number(req.params.id), userId: req.user.id },
       data: {
         ...req.body,
-        amount:    amountInBase,          // ← stocké en defaultCurrency
+        amount:    amountInBase,
         startDate: new Date(req.body.startDate),
         endDate:   req.body.endDate ? new Date(req.body.endDate) : null,
       },
@@ -100,8 +121,6 @@ router.delete('/:id', async (req, res) => {
 })
 
 // ── POST /generate ────────────────────────────────────────────────
-// Le montant est copié depuis rec.amount qui est déjà en defaultCurrency
-// → pas de conversion nécessaire lors de la génération
 router.post('/generate', async (req, res) => {
   const today    = new Date()
   today.setHours(0, 0, 0, 0)
@@ -109,7 +128,7 @@ router.post('/generate', async (req, res) => {
   const todayDow = today.getDay()
 
   try {
-    const holiday = await prisma.publicHoliday.findUnique({ where: { date: today } })
+    const holiday      = await prisma.publicHoliday.findUnique({ where: { date: today } })
     const isHoliday    = !!holiday
     const isWeekend    = todayDow === 0 || todayDow === 6
     const isWorkingDay = !isHoliday && !isWeekend
@@ -143,7 +162,6 @@ router.post('/generate', async (req, res) => {
       })
       if (exists) continue
 
-      // rec.amount est déjà en defaultCurrency → pas de conversion
       const expense = await prisma.expense.create({
         data: {
           userId:             rec.userId,
@@ -179,7 +197,7 @@ router.get('/holidays', async (req, res) => {
   const { year = new Date().getFullYear() } = req.query
   try {
     const data = await prisma.publicHoliday.findMany({
-      where: { date: { gte: new Date(`${year}-01-01`), lte: new Date(`${year}-12-31`) } },
+      where:   { date: { gte: new Date(`${year}-01-01`), lte: new Date(`${year}-12-31`) } },
       orderBy: { date: 'asc' },
     })
     res.json(data)

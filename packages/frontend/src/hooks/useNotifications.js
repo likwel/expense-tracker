@@ -3,9 +3,8 @@ import api from '../utils/api'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
-// Intervalle polling : 15s si visible, 60s si en arrière-plan
-const POLL_VISIBLE  = 15000
-const POLL_HIDDEN   = 60000
+const POLL_VISIBLE = 15000
+const POLL_HIDDEN  = 60000
 
 export const LEVEL_STYLE = {
   danger:  { bg: '#FCEBEB', color: '#A32D2D', border: '#F09595' },
@@ -15,173 +14,166 @@ export const LEVEL_STYLE = {
   info:    { bg: '#E6F1FB', color: '#0C447C', border: '#85B7EB' },
 }
 
-export function useNotifications() {
-  const [notifs,      setNotifs]      = useState([])
-  const [unreadCount, setUnreadCount] = useState(0)
-  const [loading,     setLoading]     = useState(true)
-  const [connected,   setConnected]   = useState(false) // SSE actif ?
+// ✅ État singleton — partagé entre tous les composants
+let _notifs      = []
+let _unreadCount = 0
+let _loading     = true
+let _connected   = false
+let _listeners   = new Set()       // composants abonnés
+let _pollRef     = null
+let _esRef       = null
+let _initialized = false
 
-  const esRef      = useRef(null)
-  const pollRef    = useRef(null)
-  const lastIdRef  = useRef(0)  // dernier id reçu — évite les doublons polling
+// Notifie tous les composants abonnés
+const notify = () => _listeners.forEach(fn => fn({
+  notifs: _notifs,
+  unreadCount: _unreadCount,
+  loading: _loading,
+  connected: _connected,
+}))
 
-  // ── Fetch BDD — guard si pas de token ───────────────────────
-  const fetchNotifs = useCallback(async (silent = false) => {
-    if (!localStorage.getItem('token')) return
-    try {
-      const { data } = await api.get('/notifications?limit=30')
-      setNotifs(data.data.map(n => ({ ...n, style: LEVEL_STYLE[n.level] || LEVEL_STYLE.info })))
-      setUnreadCount(data.unreadCount)
-      // Mettre à jour le dernier id connu
-      if (data.data.length > 0) lastIdRef.current = data.data[0].id
-    } catch (e){
-      console.log(e)
-    }
-    finally { if (!silent) setLoading(false) }
-  }, [])
-
-  useEffect(() => { fetchNotifs() }, [fetchNotifs])
-
-  // ── Polling — toujours actif, fiable sur mobile ───────────────
-  const startPolling = useCallback(() => {
-    if (pollRef.current) clearInterval(pollRef.current)
-    const interval = document.visibilityState === 'visible' ? POLL_VISIBLE : POLL_HIDDEN
-    pollRef.current = setInterval(() => fetchNotifs(true), interval)
-  }, [fetchNotifs])
-
-  // ── SSE — tentative unique, pas de reconnexion forcée ─────────
-  const trySSE = useCallback(() => {
-    const token = localStorage.getItem('token')
-    if (!token || esRef.current) return
-    const url = `${API_URL}/sse?token=${encodeURIComponent(token)}`
-    let es
-
-    try {
-      es = new EventSource(url)
-      esRef.current = es
-    } catch {
-      return // EventSource non supporté → polling seul
-    }
-
-    const timeout = setTimeout(() => {
-      // Si pas de connexion en 5s → fermer et rester sur polling
-      if (es.readyState !== EventSource.OPEN) {
-        es.close()
-        esRef.current = null
-        console.log('[SSE] Timeout — polling actif')
-      }
-    }, 5000)
-
-    es.onopen = () => {
-      clearTimeout(timeout)
-      setConnected(true)
-      console.log('[SSE] Connecté')
-      // SSE connecté → ralentir le polling (30s suffit comme filet de sécurité)
-      if (pollRef.current) clearInterval(pollRef.current)
-      pollRef.current = setInterval(() => fetchNotifs(true), 30000)
-    }
-
-    es.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data)
-        if (data.type === 'connected') return
-
-        setNotifs(prev => {
-          if (data.id && prev.some(n => n.id === data.id)) return prev
-          const newNotif = {
-            id:        data.id || Date.now(),
-            type:      data.type,
-            level:     data.level || 'info',
-            title:     data.label,
-            message:   data.message,
-            isRead:    false,
-            createdAt: new Date().toISOString(),
-            style:     LEVEL_STYLE[data.level] || LEVEL_STYLE.info,
-          }
-          lastIdRef.current = data.id || lastIdRef.current
-          return [newNotif, ...prev]
-        })
-        setUnreadCount(c => c + 1)
-      } catch {}
-    }
-
-    es.onerror = () => {
-      clearTimeout(timeout)
-      es.close()
-      esRef.current = null
-      setConnected(false)
-      // SSE mort → revenir au polling rapide
-      startPolling()
-      console.log('[SSE] Erreur — retour polling')
-    }
-  }, [fetchNotifs, startPolling])
-
-  // ── Init ─────────────────────────────────────────────────────
-  useEffect(() => {
-    startPolling() // polling démarre toujours en premier
-    trySSE()       // SSE en bonus si supporté
-
-    // Visibilité : ajuster intervalle polling + reconnecter SSE
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        fetchNotifs(true)
-        startPolling()
-        if (!esRef.current) trySSE()
-      } else {
-        // Arrière-plan → polling lent
-        if (pollRef.current) clearInterval(pollRef.current)
-        pollRef.current = setInterval(() => fetchNotifs(true), POLL_HIDDEN)
-      }
-    }
-
-    const handleOnline = () => {
-      fetchNotifs(true)
-      startPolling()
-      if (!esRef.current) trySSE()
-    }
-
-    document.addEventListener('visibilitychange', handleVisibility)
-    window.addEventListener('online', handleOnline)
-
-    return () => {
-      if (esRef.current)  esRef.current.close()
-      if (pollRef.current) clearInterval(pollRef.current)
-      document.removeEventListener('visibilitychange', handleVisibility)
-      window.removeEventListener('online', handleOnline)
-    }
-  }, [fetchNotifs, startPolling, trySSE])
-
-  // ── Actions ───────────────────────────────────────────────────
-  const markRead = useCallback(async (id) => {
-    setNotifs(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n))
-    setUnreadCount(c => Math.max(0, c - 1))
-    await api.patch(`/notifications/${id}/read`).catch(() => {})
-  }, [])
-
-  const markAllRead = useCallback(async () => {
-    setNotifs(prev => prev.map(n => ({ ...n, isRead: true })))
-    setUnreadCount(0)
-    await api.patch('/notifications/read-all').catch(() => {})
-  }, [])
-
-  const dismiss = useCallback(async (id) => {
-    setNotifs(prev => {
-      const n = prev.find(x => x.id === id)
-      if (n && !n.isRead) setUnreadCount(c => Math.max(0, c - 1))
-      return prev.filter(x => x.id !== id)
-    })
-    await api.delete(`/notifications/${id}`).catch(() => {})
-  }, [])
-
-  const dismissAll = useCallback(async () => {
-    setNotifs([])
-    setUnreadCount(0)
-    await api.delete('/notifications/clear-all').catch(() => {})
-  }, [])
-
-  return {
-    notifs, unreadCount, loading, connected,
-    markRead, markAllRead, dismiss, dismissAll,
-    refetch: fetchNotifs,
+const fetchNotifs = async (silent = false) => {
+  if (!localStorage.getItem('token')) return
+  try {
+    const { data } = await api.get('/notifications?limit=30')
+    _notifs      = data.data.map(n => ({ ...n, style: LEVEL_STYLE[n.level] || LEVEL_STYLE.info }))
+    _unreadCount = data.unreadCount
+    if (!silent) _loading = false
+    notify()
+  } catch {
+    if (!silent) { _loading = false; notify() }
   }
+}
+
+const startPolling = (interval = null) => {
+  if (_pollRef) clearInterval(_pollRef)
+  const ms = interval ?? (document.visibilityState === 'visible' ? POLL_VISIBLE : POLL_HIDDEN)
+  _pollRef = setInterval(() => fetchNotifs(true), ms)
+}
+
+const trySSE = () => {
+  const token = localStorage.getItem('token')
+  if (!token || _esRef) return
+  const url = `${API_URL}/sse?token=${encodeURIComponent(token)}`
+  let es
+  try { es = new EventSource(url) } catch { return }
+  _esRef = es
+
+  const timeout = setTimeout(() => {
+    if (es.readyState !== EventSource.OPEN) {
+      es.close(); _esRef = null
+    }
+  }, 5000)
+
+  es.onopen = () => {
+    clearTimeout(timeout)
+    _connected = true; notify()
+    startPolling(30000) // SSE actif → polling lent
+  }
+
+  es.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data)
+      if (data.type === 'connected') return
+      if (data.id && _notifs.some(n => n.id === data.id)) return
+      const newNotif = {
+        id: data.id || Date.now(), type: data.type,
+        level: data.level || 'info', title: data.label,
+        message: data.message, isRead: false,
+        createdAt: new Date().toISOString(),
+        style: LEVEL_STYLE[data.level] || LEVEL_STYLE.info,
+      }
+      _notifs      = [newNotif, ..._notifs]
+      _unreadCount = _unreadCount + 1
+      notify()
+    } catch {}
+  }
+
+  es.onerror = () => {
+    clearTimeout(timeout)
+    es.close(); _esRef = null
+    _connected = false; notify()
+    startPolling() // SSE mort → polling rapide
+  }
+}
+
+const initSingleton = () => {
+  if (_initialized) return
+  _initialized = true
+
+  fetchNotifs()
+  startPolling()
+  trySSE()
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      fetchNotifs(true); startPolling()
+      if (!_esRef) trySSE()
+    } else {
+      startPolling(POLL_HIDDEN)
+    }
+  })
+
+  window.addEventListener('online', () => {
+    fetchNotifs(true); startPolling()
+    if (!_esRef) trySSE()
+  })
+}
+
+// ✅ Actions partagées
+const actions = {
+  markRead: async (id) => {
+    _notifs      = _notifs.map(n => n.id === id ? { ...n, isRead: true } : n)
+    _unreadCount = Math.max(0, _unreadCount - 1)
+    notify()
+    await api.patch(`/notifications/${id}/read`).catch(() => {})
+  },
+  markAllRead: async () => {
+    _notifs      = _notifs.map(n => ({ ...n, isRead: true }))
+    _unreadCount = 0
+    notify()
+    await api.patch('/notifications/read-all').catch(() => {})
+  },
+  dismiss: async (id) => {
+    const n = _notifs.find(x => x.id === id)
+    if (n && !n.isRead) _unreadCount = Math.max(0, _unreadCount - 1)
+    _notifs = _notifs.filter(x => x.id !== id)
+    notify()
+    await api.delete(`/notifications/${id}`).catch(() => {})
+  },
+  dismissAll: async () => {
+    _notifs = []; _unreadCount = 0
+    notify()
+    await api.delete('/notifications/clear-all').catch(() => {})
+  },
+  refetch: () => fetchNotifs(),
+}
+
+// ✅ Hook — s'abonne au singleton, pas de requête propre
+export function useNotifications() {
+  const [state, setState] = useState({
+    notifs: _notifs,
+    unreadCount: _unreadCount,
+    loading: _loading,
+    connected: _connected,
+  })
+
+  useEffect(() => {
+    // S'abonner aux mises à jour
+    _listeners.add(setState)
+    // Initialiser le singleton une seule fois
+    initSingleton()
+    return () => { _listeners.delete(setState) }
+  }, [])
+
+  return { ...state, ...actions }
+}
+
+// Réinitialise le singleton à la déconnexion
+export const resetNotifications = () => {
+  if (_pollRef) clearInterval(_pollRef)
+  if (_esRef)   { _esRef.close(); _esRef = null }
+  _notifs = []; _unreadCount = 0; _loading = true
+  _connected = false; _initialized = false
+  notify()
 }

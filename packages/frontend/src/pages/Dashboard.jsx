@@ -9,22 +9,28 @@ import { useApi } from '../hooks/useApi'
 import { recurringExpensesApi, recurringIncomesApi } from '../services/api'
 import MonthlyChart from '../components/ui/MonthlyChart'
 
+import { useOrg } from '../contexts/OrgContext'
+
 const now = new Date()
-const PARAMS = { month: now.getMonth() + 1, year: now.getFullYear() }
 
 export default function Dashboard() {
   const { fmt } = useFmt()
   const nav = useNavigate()
+  const { activeOrg } = useOrg()
   const [generating, setGenerating] = useState(false)
   const [genResult, setGenResult] = useState(null)
   const [txFilter, setTxFilter] = useState('all')
 
-  const { data: summary, refetch: refetchSummary } = useApi('/reports/summary', PARAMS)
-  const { data: monthly } = useApi('/reports/monthly', { year: now.getFullYear() })
-  const { data: expData, refetch: refetchExp } = useApi('/expenses', { ...PARAMS, take: 5 })
-  const { data: recurExp, refetch: refetchRecurExp } = useApi('/recurring')
-  const { data: recurInc, refetch: refetchRecurInc } = useApi('/recurring-income')
-  const { data: incData } = useApi('/incomes', { ...PARAMS, take: 5 })
+  // ✅ Paramètres réactifs selon l'org active
+  const orgParam = activeOrg ? { orgId: activeOrg.id } : {}
+  const PARAMS   = { month: now.getMonth() + 1, year: now.getFullYear(), ...orgParam }
+
+  const { data: summary,  refetch: refetchSummary  } = useApi('/reports/summary',  PARAMS)
+  const { data: monthly                             } = useApi('/reports/monthly',  { year: now.getFullYear(), ...orgParam })
+  const { data: expData,  refetch: refetchExp       } = useApi('/expenses',         { ...PARAMS, take: 5 })
+  const { data: recurExp, refetch: refetchRecurExp  } = useApi('/recurring',        orgParam)
+  const { data: recurInc, refetch: refetchRecurInc  } = useApi('/recurring-income', orgParam)
+  const { data: incData                             } = useApi('/incomes',          { ...PARAMS, take: 5 })
 
   // ── Valeurs réelles backend ───────────────────────────────────
   const punctualExp = summary?.punctualExpenses || 0

@@ -1,46 +1,81 @@
 const router = require('express').Router()
 const prisma  = require('../config/prisma')
 const auth    = require('../middleware/auth')
-
 const { convert, getUserCurrencies } = require('../services/currencyService')
 
 router.use(auth)
 
-// ── GET / — liste budgets du mois avec spent calculé dynamiquement ──
+// ── Helper : récupérer les userIds d'une org ──────────────────────
+const getOrgMemberIds = async (userId, orgId) => {
+  const member = await prisma.orgMember.findFirst({
+    where: { organizationId: Number(orgId), userId },
+  })
+  if (!member) throw { status: 403, message: 'Accès refusé à cette organisation' }
+
+  const members = await prisma.orgMember.findMany({
+    where:  { organizationId: Number(orgId) },
+    select: { userId: true },
+  })
+  return members.map(m => m.userId)
+}
+
+// ── GET / ─────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
-  const { month, year } = req.query
+  const { month, year, orgId } = req.query
   const m = Number(month), y = Number(year)
   try {
+    // Déterminer les userIds à agréger
+    const userIds = orgId
+      ? await getOrgMemberIds(req.user.id, orgId)
+      : [req.user.id]
+
+    // Récupérer les budgets (union de tous les membres)
     const budgets = await prisma.budget.findMany({
-      where:   { userId: req.user.id, month: m, year: y },
+      where: {
+        userId: { in: userIds },
+        month: m, year: y,
+      },
       include: { category: { select: { name:true, icon:true, color:true } } },
     })
-    const result = await Promise.all(budgets.map(async b => {
+
+    // Grouper par categoryId et sommer les montants
+    const grouped = {}
+    budgets.forEach(b => {
+      const key = b.categoryId
+      if (!grouped[key]) {
+        grouped[key] = { ...b, amount: 0 }
+      }
+      grouped[key].amount += Number(b.amount)
+    })
+
+    // Calculer le spent agrégé pour chaque catégorie
+    const result = await Promise.all(Object.values(grouped).map(async b => {
       const agg = await prisma.expense.aggregate({
         where: {
-          userId:     req.user.id,
+          userId:     { in: userIds },
           categoryId: b.categoryId,
           date: { gte: new Date(y, m-1, 1), lte: new Date(y, m, 0) },
         },
         _sum: { amount: true },
       })
-      return { ...b, spent: Number(agg._sum.amount || 0) }
+      return { ...b, amount: b.amount, spent: Number(agg._sum.amount || 0) }
     }))
+
     res.json(result)
-  } catch (e) { res.status(500).json({ error: e.message }) }
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message })
+    res.status(500).json({ error: e.message })
+  }
 })
 
-// ── POST / — créer ou mettre à jour (upsert) ──────────────────────
+// ── POST / ────────────────────────────────────────────────────────
+// Le budget est créé pour l'user courant (pas pour toute l'org)
 router.post('/', async (req, res) => {
   const { categoryId, amount, month, year } = req.body
-
   try {
-    // 1. Récupérer les devises de l'utilisateur
     const { currency: fromCurrency, defaultCurrency: toCurrency } =
-    await getUserCurrencies(prisma, req.user.id)
-
-    // 2. Convertir le montant saisi vers la devise de base
-    const { amountInBase, rate } = await convert(Number(amount), fromCurrency, toCurrency)
+      await getUserCurrencies(prisma, req.user.id)
+    const { amountInBase } = await convert(Number(amount), fromCurrency, toCurrency)
 
     const row = await prisma.budget.upsert({
       where: {
@@ -65,16 +100,13 @@ router.post('/', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
-// ── PUT /:id — modifier le montant d'un budget existant ───────────
+// ── PUT /:id ──────────────────────────────────────────────────────
 router.put('/:id', async (req, res) => {
   const { amount } = req.body
   try {
-    // 1. Récupérer les devises de l'utilisateur
     const { currency: fromCurrency, defaultCurrency: toCurrency } =
-    await getUserCurrencies(prisma, req.user.id)
-
-    // 2. Convertir le montant saisi vers la devise de base
-    const { amountInBase, rate } = await convert(Number(amount), fromCurrency, toCurrency)
+      await getUserCurrencies(prisma, req.user.id)
+    const { amountInBase } = await convert(Number(amount), fromCurrency, toCurrency)
 
     const existing = await prisma.budget.findFirst({
       where: { id: Number(req.params.id), userId: req.user.id },

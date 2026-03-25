@@ -2,23 +2,25 @@ import { useState, useRef, useEffect } from 'react'
 import {
   Calendar, User, Shield, Sun, DollarSign, X, LogOut,
   Zap, CreditCard, HelpCircle, Bell, LayoutList,
-  AlertTriangle, CheckCircle, Info, Trash2, Settings2
+  AlertTriangle, CheckCircle, Info, Trash2, Settings2,
+  Users, Building2, ChevronDown, Check,
 } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
-import { useAuth }     from '../../contexts/AuthContext'
-import { usePlan }     from '../../hooks/usePlan'
+import { useNavigate }    from 'react-router-dom'
+import { useAuth }        from '../../contexts/AuthContext'
+import { usePlan }        from '../../hooks/usePlan'
+import { useOrg }         from '../../contexts/OrgContext'
 import { useNotifications, LEVEL_STYLE } from '../../hooks/useNotifications'
-import { MONTHS_FULL } from '../../utils/format'
+import { MONTHS_FULL }    from '../../utils/format'
 
 const MENU_ITEMS = [
-  { icon: User,       label: 'Profil',    sub: 'Nom, email, avatar',  to: '/settings/profile',  color: '#534AB7', bg: '#EEEDFE' },
-  { icon: Settings2,       label: 'Espace Admin',    sub: 'Espace administrateur',  to: '/admin',  color: '#f7a93c', bg: '#f6f5cf' },
-  { icon: Shield,     label: 'Sécurité',  sub: 'Mot de passe',        to: '/settings/security', color: '#0F6E56', bg: '#E1F5EE' },
-  { icon: Sun,        label: 'Thème',     sub: 'Clair, sombre',       to: '/settings/theme',    color: '#BA7517', bg: '#FAEEDA' },
-  { icon: DollarSign, label: 'Devise',    sub: 'Ar, €, $...',         to: '/settings/currency', color: '#185FA5', bg: '#E6F1FB' },
-  { icon: CreditCard, label: 'Mon plan',  sub: 'Abonnement, limites', to: '/settings/plan',     color: '#993556', bg: '#FBEAF0' },
-  { icon: Bell,       label: 'Alertes',   sub: 'Notifications',       to: '/notifications',   color: '#854F0B', bg: '#FAEEDA' },
-  { icon: HelpCircle, label: 'Aide',      sub: 'FAQ, support',        to: '/help',              color: '#5F5E5A', bg: '#F1EFE8' },
+  { icon: User,       label: 'Profil',       sub: 'Nom, email, avatar',      to: '/settings/profile',  color: '#534AB7', bg: '#EEEDFE' },
+  { icon: Settings2,  label: 'Espace Admin', sub: 'Espace administrateur',   to: '/admin',             color: '#f7a93c', bg: '#f6f5cf' },
+  { icon: Shield,     label: 'Sécurité',     sub: 'Mot de passe',            to: '/settings/security', color: '#0F6E56', bg: '#E1F5EE' },
+  { icon: Sun,        label: 'Thème',        sub: 'Clair, sombre',           to: '/settings/theme',    color: '#BA7517', bg: '#FAEEDA' },
+  { icon: DollarSign, label: 'Devise',       sub: 'Ar, €, $...',             to: '/settings/currency', color: '#185FA5', bg: '#E6F1FB' },
+  { icon: CreditCard, label: 'Mon plan',     sub: 'Abonnement, limites',     to: '/settings/plan',     color: '#993556', bg: '#FBEAF0' },
+  { icon: Bell,       label: 'Alertes',      sub: 'Notifications',           to: '/notifications',     color: '#854F0B', bg: '#FAEEDA' },
+  { icon: HelpCircle, label: 'Aide',         sub: 'FAQ, support',            to: '/help',              color: '#5F5E5A', bg: '#F1EFE8' },
 ]
 
 const PLAN_STYLE = {
@@ -26,6 +28,10 @@ const PLAN_STYLE = {
   pro:   { label: 'Pro',     bg: '#EEEDFE', color: '#3C3489' },
   trial: { label: 'Essai',   bg: '#E1F5EE', color: '#0F6E56' },
 }
+
+const ORG_TYPE_ICON = { family: Users, business: Building2 }
+const ORG_TYPE_COLOR = { family: '#0F6E56', business: '#BA7517' }
+const ORG_TYPE_BG    = { family: '#E1F5EE', business: '#FAEEDA' }
 
 function NotifIcon({ level, color, size = 13 }) {
   const p = { size, color, strokeWidth: 2 }
@@ -60,6 +66,138 @@ function Logo() {
   )
 }
 
+// ── Dropdown organisation ─────────────────────────────────────────
+function OrgSwitcher() {
+  const { orgs, activeOrg, switchOrg } = useOrg()
+  const { user }  = useAuth()
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const handler = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  // Pas d'orgs → rien à afficher
+  if (!orgs || orgs.length === 0) return null
+
+  const Icon  = activeOrg ? (ORG_TYPE_ICON[activeOrg.type]  || Users) : User
+  const color = activeOrg ? (ORG_TYPE_COLOR[activeOrg.type] || '#534AB7') : '#534AB7'
+  const bg    = activeOrg ? (ORG_TYPE_BG[activeOrg.type]    || '#EEEDFE') : '#EEEDFE'
+  const label = activeOrg ? activeOrg.name : (user?.name || 'Personnel')
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      {/* Bouton trigger */}
+      <button onClick={() => setOpen(v => !v)} style={{
+        display: 'flex', alignItems: 'center', gap: 7,
+        padding: '5px 10px 5px 6px', borderRadius: 20,
+        border: `1.5px solid ${open ? color : '#eee'}`,
+        background: open ? bg : '#fafafa',
+        cursor: 'pointer', transition: 'all 0.15s',
+      }}>
+        <div style={{
+          width: 24, height: 24, borderRadius: 12,
+          background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Icon size={13} color={color} strokeWidth={2}/>
+        </div>
+        <span style={{ fontSize: 12, fontWeight: 700, color, maxWidth: 100,
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {label}
+        </span>
+        <ChevronDown size={12} color={color} strokeWidth={2.5}
+          style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}/>
+      </button>
+
+      {/* Dropdown */}
+      {open && (
+        <div style={{
+          position: 'absolute', top: 40, left: 0,
+          background: '#fff', borderRadius: 14,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.13)',
+          minWidth: 220, zIndex: 50, overflow: 'hidden',
+          border: '0.5px solid #eee',
+        }}>
+          <div style={{ padding: '6px 8px' }}>
+
+            {/* Compte personnel */}
+            <button onClick={() => { switchOrg(null); setOpen(false) }} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              width: '100%', padding: '9px 8px', borderRadius: 10,
+              border: 'none', cursor: 'pointer', textAlign: 'left',
+              background: !activeOrg ? '#EEEDFE' : 'none',
+              transition: 'background 0.12s',
+            }}
+            onMouseEnter={e => { if (activeOrg) e.currentTarget.style.background = '#f7f6fd' }}
+            onMouseLeave={e => { if (activeOrg) e.currentTarget.style.background = 'none' }}>
+              <div style={{ width: 32, height: 32, borderRadius: 10, background: '#EEEDFE',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <User size={15} color="#534AB7" strokeWidth={1.8}/>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700,
+                  color: !activeOrg ? '#534AB7' : '#222' }}>
+                  {user?.name || 'Mon compte'}
+                </div>
+                <div style={{ fontSize: 11, color: '#aaa' }}>Compte personnel</div>
+              </div>
+              {!activeOrg && <Check size={14} color="#534AB7" strokeWidth={2.5}/>}
+            </button>
+
+            {/* Séparateur si orgs */}
+            {orgs.length > 0 && (
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#bbb',
+                textTransform: 'uppercase', letterSpacing: '0.5px',
+                padding: '6px 8px 4px' }}>
+                Mes organisations
+              </div>
+            )}
+
+            {/* Liste des orgs */}
+            {orgs.map(org => {
+              const OIcon = ORG_TYPE_ICON[org.type]  || Users
+              const oColor = ORG_TYPE_COLOR[org.type] || '#534AB7'
+              const oBg    = ORG_TYPE_BG[org.type]    || '#EEEDFE'
+              const isActive = activeOrg?.id === org.id
+              return (
+                <button key={org.id} onClick={() => { switchOrg(org); setOpen(false) }} style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  width: '100%', padding: '9px 8px', borderRadius: 10,
+                  border: 'none', cursor: 'pointer', textAlign: 'left',
+                  background: isActive ? oBg : 'none',
+                  transition: 'background 0.12s',
+                }}
+                onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = '#f7f7f7' }}
+                onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'none' }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 10, background: oBg,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <OIcon size={15} color={oColor} strokeWidth={1.8}/>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700,
+                      color: isActive ? oColor : '#222',
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {org.name}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#aaa' }}>
+                      {org.type === 'family' ? 'Famille' : 'Entreprise'}
+                      {' · '}{org._count?.members || 0} membre{(org._count?.members || 0) > 1 ? 's' : ''}
+                    </div>
+                  </div>
+                  {isActive && <Check size={14} color={oColor} strokeWidth={2.5}/>}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Header principal ──────────────────────────────────────────────
 export default function Header({ title }) {
   const { user, logout }          = useAuth()
   const { plan }                  = usePlan()
@@ -70,7 +208,6 @@ export default function Header({ title }) {
   const menuRef  = useRef(null)
   const notifRef = useRef(null)
 
-  // ── Notifications avec valeurs par défaut sécurisées ─────────
   const {
     notifs      = [],
     unreadCount = 0,
@@ -81,7 +218,6 @@ export default function Header({ title }) {
     dismissAll  = () => {},
   } = useNotifications() || {}
 
-  // ── Fermer dropdowns au clic extérieur ────────────────────────
   useEffect(() => {
     const handler = (e) => {
       if (menuRef.current  && !menuRef.current.contains(e.target))  setMenuOpen(false)
@@ -91,12 +227,10 @@ export default function Header({ title }) {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const handleLogout = () => { setMenuOpen(false); logout(); navigate('/login') }
-
-  const planKey   = plan?.isTrial ? 'trial' : (plan?.effectivePlan ?? 'free')
-  const planStyle = PLAN_STYLE[planKey] ?? PLAN_STYLE.free
-
-  const handleNotifOpen = () => { setNotifOpen(v => !v); setMenuOpen(false) }
+  const handleLogout   = () => { setMenuOpen(false); logout(); navigate('/login') }
+  const planKey        = plan?.isTrial ? 'trial' : (plan?.effectivePlan ?? 'free')
+  const planStyle      = PLAN_STYLE[planKey] ?? PLAN_STYLE.free
+  const handleNotifOpen  = () => { setNotifOpen(v => !v); setMenuOpen(false) }
   const handleNotifClick = async (n) => { if (!n.isRead) await markRead(n.id) }
 
   return (
@@ -123,6 +257,9 @@ export default function Header({ title }) {
 
         {/* ── Actions droite ── */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+
+          {/* ✅ Switcher organisation */}
+          <OrgSwitcher/>
 
           {/* Cloche notifications */}
           <div style={{ position: 'relative' }} ref={notifRef}>
@@ -157,28 +294,23 @@ export default function Header({ title }) {
                 boxShadow: '0 8px 32px rgba(0,0,0,0.13)',
                 width: 300, zIndex: 50, overflow: 'hidden',
               }}>
-                {/* En-tête notifs */}
                 <div style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   padding: '10px 14px 8px', borderBottom: '1px solid #f0f0f0',
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: '#222' }}>
-                      Notifications
-                    </span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#222' }}>Notifications</span>
                     {unreadCount > 0 && (
-                      <span style={{
-                        background: '#E24B4A', color: '#fff',
-                        fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20,
-                      }}>{unreadCount}</span>
+                      <span style={{ background: '#E24B4A', color: '#fff',
+                        fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20 }}>
+                        {unreadCount}
+                      </span>
                     )}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     {unreadCount > 0 && (
-                      <button onClick={markAllRead} style={{
-                        background: 'none', border: 'none', cursor: 'pointer',
-                        fontSize: 11, color: '#6C5CE7', fontWeight: 600,
-                      }}>
+                      <button onClick={markAllRead} style={{ background: 'none', border: 'none',
+                        cursor: 'pointer', fontSize: 11, color: '#6C5CE7', fontWeight: 600 }}>
                         Tout lire
                       </button>
                     )}
@@ -189,7 +321,6 @@ export default function Header({ title }) {
                   </div>
                 </div>
 
-                {/* Liste notifs */}
                 <div style={{ maxHeight: 320, overflowY: 'auto' }}>
                   {loading ? (
                     <div style={{ textAlign: 'center', padding: '24px 0', color: '#ccc', fontSize: 13 }}>
@@ -205,37 +336,28 @@ export default function Header({ title }) {
                       {notifs.map(n => {
                         const s = n.style || LEVEL_STYLE.info
                         return (
-                          <div key={n.id}
-                            onClick={() => handleNotifClick(n)}
-                            style={{
-                              display: 'flex', alignItems: 'flex-start', gap: 10,
-                              padding: '9px 8px', borderRadius: 10, marginBottom: 2,
-                              background: !n.isRead ? s.bg : 'none',
-                              cursor: 'pointer', transition: 'background 0.1s',
-                            }}
-                            onMouseEnter={e => e.currentTarget.style.background = !n.isRead ? s.bg : '#f7f7f7'}
-                            onMouseLeave={e => e.currentTarget.style.background = !n.isRead ? s.bg : 'none'}
-                          >
-                            <div style={{
-                              width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+                          <div key={n.id} onClick={() => handleNotifClick(n)} style={{
+                            display: 'flex', alignItems: 'flex-start', gap: 10,
+                            padding: '9px 8px', borderRadius: 10, marginBottom: 2,
+                            background: !n.isRead ? s.bg : 'none',
+                            cursor: 'pointer', transition: 'background 0.1s',
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.background = !n.isRead ? s.bg : '#f7f7f7'}
+                          onMouseLeave={e => e.currentTarget.style.background = !n.isRead ? s.bg : 'none'}>
+                            <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0,
                               background: s.bg, border: `1px solid ${s.border}`,
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            }}>
+                              display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                               <NotifIcon level={n.level} color={s.color}/>
                             </div>
                             <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{
-                                fontSize: 12, lineHeight: 1.4,
+                              <div style={{ fontSize: 12, lineHeight: 1.4,
                                 fontWeight: !n.isRead ? 700 : 400,
-                                color: !n.isRead ? '#222' : '#555',
-                              }}>
+                                color: !n.isRead ? '#222' : '#555' }}>
                                 {n.title}
                               </div>
                               {n.message && (
-                                <div style={{
-                                  fontSize: 11, color: '#aaa', marginTop: 2,
-                                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                                }}>
+                                <div style={{ fontSize: 11, color: '#aaa', marginTop: 2,
+                                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                   {n.message}
                                 </div>
                               )}
@@ -243,16 +365,15 @@ export default function Header({ title }) {
                                 {timeAgo(n.createdAt)}
                               </div>
                             </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                            <div style={{ display: 'flex', flexDirection: 'column',
+                              alignItems: 'center', gap: 6, flexShrink: 0 }}>
                               {!n.isRead && (
                                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#6C5CE7' }}/>
                               )}
-                              <button
-                                onClick={(e) => { e.stopPropagation(); dismiss(n.id) }}
+                              <button onClick={e => { e.stopPropagation(); dismiss(n.id) }}
                                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ddd', padding: 0 }}
                                 onMouseEnter={e => e.currentTarget.style.color = '#E24B4A'}
-                                onMouseLeave={e => e.currentTarget.style.color = '#ddd'}
-                              >
+                                onMouseLeave={e => e.currentTarget.style.color = '#ddd'}>
                                 <Trash2 size={12}/>
                               </button>
                             </div>
@@ -263,14 +384,11 @@ export default function Header({ title }) {
                   )}
                 </div>
 
-                {/* Footer notifs */}
-                <div style={{
-                  borderTop: '1px solid #f0f0f0', padding: '8px 14px',
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                }}>
-                  <button
-                    onClick={() => { navigate('/notifications'); setNotifOpen(false) }}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#6C5CE7', fontWeight: 600 }}>
+                <div style={{ borderTop: '1px solid #f0f0f0', padding: '8px 14px',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <button onClick={() => { navigate('/notifications'); setNotifOpen(false) }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer',
+                      fontSize: 12, color: '#6C5CE7', fontWeight: 600 }}>
                     Gérer les alertes →
                   </button>
                   {notifs.length > 0 && (
@@ -286,15 +404,13 @@ export default function Header({ title }) {
 
           {/* Bouton menu */}
           <div style={{ position: 'relative' }} ref={menuRef}>
-            <button
-              onClick={() => { setMenuOpen(v => !v); setNotifOpen(false) }}
-              style={{
-                width: 38, height: 38, borderRadius: 19,
-                background: menuOpen ? '#6C5CE7' : '#f5f3ff',
-                border: 'none', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                transition: 'background 0.2s',
-              }}>
+            <button onClick={() => { setMenuOpen(v => !v); setNotifOpen(false) }} style={{
+              width: 38, height: 38, borderRadius: 19,
+              background: menuOpen ? '#6C5CE7' : '#f5f3ff',
+              border: 'none', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              transition: 'background 0.2s',
+            }}>
               <LayoutList size={18} color={menuOpen ? '#fff' : '#6C5CE7'} strokeWidth={1.9}/>
             </button>
 
@@ -305,26 +421,19 @@ export default function Header({ title }) {
                 boxShadow: '0 8px 32px rgba(0,0,0,0.13)',
                 minWidth: 230, zIndex: 50, overflow: 'hidden',
               }}>
-                {/* En-tête menu */}
-                <div style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-                  padding: '10px 14px 8px', borderBottom: '1px solid #f0f0f0',
-                }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+                  padding: '10px 14px 8px', borderBottom: '1px solid #f0f0f0' }}>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 700, color: '#222' }}>
                       {user?.name || 'Utilisateur'}
                     </div>
-                    <div style={{ fontSize: 11, color: '#aaa', marginBottom: 6 }}>
-                      {user?.email || ''}
-                    </div>
-                    <button
-                      onClick={() => { navigate('/settings/plan'); setMenuOpen(false) }}
-                      style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 4,
-                        background: planStyle.bg, color: planStyle.color,
-                        fontSize: 11, fontWeight: 700, padding: '3px 8px',
-                        borderRadius: 20, border: 'none', cursor: 'pointer',
-                      }}>
+                    <div style={{ fontSize: 11, color: '#aaa', marginBottom: 6 }}>{user?.email || ''}</div>
+                    <button onClick={() => { navigate('/settings/plan'); setMenuOpen(false) }} style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                      background: planStyle.bg, color: planStyle.color,
+                      fontSize: 11, fontWeight: 700, padding: '3px 8px',
+                      borderRadius: 20, border: 'none', cursor: 'pointer',
+                    }}>
                       <Zap size={10} strokeWidth={2.5}/>
                       {planStyle.label}
                       {plan?.isTrial && plan?.trialEndAt && (
@@ -340,24 +449,18 @@ export default function Header({ title }) {
                   </button>
                 </div>
 
-                {/* Items menu */}
-                <div style={{ padding: '6px 8px' }}>
+                <div style={{ padding: '6px 8px', maxHeight: 250, overflowY: 'auto' }}>
                   {MENU_ITEMS.map(({ icon: Icon, label, sub, to, color, bg }) => (
-                    <button key={to}
-                      onClick={() => { navigate(to); setMenuOpen(false) }}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 12,
-                        width: '100%', padding: '9px 8px',
-                        background: 'none', border: 'none', cursor: 'pointer',
-                        borderRadius: 10, textAlign: 'left', transition: 'background 0.12s',
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.background = '#f7f6fd'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'none'}
-                    >
-                      <div style={{
-                        width: 34, height: 34, borderRadius: 10, background: bg,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                      }}>
+                    <button key={to} onClick={() => { navigate(to); setMenuOpen(false) }} style={{
+                      display: 'flex', alignItems: 'center', gap: 12,
+                      width: '100%', padding: '9px 8px',
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      borderRadius: 10, textAlign: 'left', transition: 'background 0.12s',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = '#f7f6fd'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                      <div style={{ width: 34, height: 34, borderRadius: 10, background: bg,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                         <Icon size={15} color={color} strokeWidth={1.8}/>
                       </div>
                       <div>
@@ -370,22 +473,17 @@ export default function Header({ title }) {
 
                 <div style={{ height: 1, background: '#f0f0f0', margin: '0 8px' }}/>
 
-                {/* Déconnexion */}
                 <div style={{ padding: '6px 8px' }}>
-                  <button onClick={handleLogout}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 12,
-                      width: '100%', padding: '9px 8px',
-                      background: 'none', border: 'none', cursor: 'pointer',
-                      borderRadius: 10, textAlign: 'left', transition: 'background 0.12s',
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#fff5f5'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'none'}
-                  >
-                    <div style={{
-                      width: 34, height: 34, borderRadius: 10, background: '#FCEBEB',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                    }}>
+                  <button onClick={handleLogout} style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    width: '100%', padding: '9px 8px',
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    borderRadius: 10, textAlign: 'left', transition: 'background 0.12s',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#fff5f5'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                    <div style={{ width: 34, height: 34, borderRadius: 10, background: '#FCEBEB',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                       <LogOut size={15} color="#E24B4A" strokeWidth={1.8}/>
                     </div>
                     <div>
@@ -397,7 +495,6 @@ export default function Header({ title }) {
               </div>
             )}
           </div>
-
         </div>
       </div>
     </div>

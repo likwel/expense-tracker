@@ -10,6 +10,7 @@ import MonthPicker     from '../components/ui/MonthPicker'
 import { useFmt }      from '../hooks/useFmt'
 import { usePlan }     from '../hooks/usePlan'
 import { useNavigate } from 'react-router-dom'
+import { useOrg } from '../contexts/OrgContext'
 
 const now = new Date()
 
@@ -200,10 +201,14 @@ export default function Reports() {
   const mStart = new Date(Date.UTC(year, month - 1, 1))
   const mEnd   = new Date(Date.UTC(year, month, 0))
 
-  const { data: summary }      = useApi('/reports/summary',   { month, year })
-  const { data: recurExpList } = useApi('/recurring')
-  const { data: recurIncList } = useApi('/recurring-income')
-  const { data: evolution }    = useApi(isPro ? '/reports/evolution' : null, { year })
+  const { activeOrg } = useOrg()
+  // ✅ Paramètres réactifs selon l'org active
+  const orgParam = activeOrg ? { orgId: activeOrg.id } : {}
+
+  const { data: summary }      = useApi('/reports/summary',   { month, year, ... orgParam })
+  const { data: recurExpList } = useApi('/recurring', orgParam)
+  const { data: recurIncList } = useApi('/recurring-income', orgParam)
+  const { data: evolution }    = useApi(isPro ? '/reports/evolution' : null, { year, ... orgParam })
 
   const prevMonth = month === 1 ? 12 : month - 1
   const prevYear  = month === 1 ? year - 1 : year

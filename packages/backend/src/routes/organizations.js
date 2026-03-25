@@ -2,6 +2,25 @@ const router = require('express').Router()
 const prisma  = require('../config/prisma')
 const auth    = require('../middleware/auth')
 
+// ── GET /organizations/search — recherche ─────────────────────────
+router.get('/search', async (req, res) => {
+  const { q, type } = req.query
+  
+  if (!q || q.length < 2) return res.json([])
+  try {
+    const orgs = await prisma.organization.findMany({
+      where: {
+        name:   { contains: q, mode: 'insensitive' },
+        status: 'active',
+        ...(type && type !== 'personal' ? { type } : {}),
+      },
+      include: { _count: { select: { members: true } } },
+      take: 8,
+    })
+    res.json(orgs)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 router.use(auth)
 
 // ── GET /organizations/mine — mes organisations ───────────────────
@@ -15,24 +34,6 @@ router.get('/mine', async (req, res) => {
       ...m.organization,
       myRole: m.role,
     }))
-    res.json(orgs)
-  } catch (e) { res.status(500).json({ error: e.message }) }
-})
-
-// ── GET /organizations/search — recherche ─────────────────────────
-router.get('/search', async (req, res) => {
-  const { q, type } = req.query
-  if (!q || q.length < 2) return res.json([])
-  try {
-    const orgs = await prisma.organization.findMany({
-      where: {
-        name:   { contains: q, mode: 'insensitive' },
-        status: 'active',
-        ...(type && type !== 'personal' ? { type } : {}),
-      },
-      include: { _count: { select: { members: true } } },
-      take: 8,
-    })
     res.json(orgs)
   } catch (e) { res.status(500).json({ error: e.message }) }
 })

@@ -20,6 +20,7 @@ import NotificationsPage from './pages/NotificationsPage'
 import HelpPage          from './pages/HelpPage'
 import PlanPage          from './pages/settings/PlanPage'
 import AdminPage from './pages/Admin'
+import { OrgProvider } from './contexts/OrgContext'
 
 function PrivateRoute({ children }) {
   const { user, loading, ratesReady } = useAuth()
@@ -86,7 +87,9 @@ function RootRedirect() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppRoutes/>
+      <OrgProvider>
+        <AppRoutes/>
+      </OrgProvider>
     </AuthProvider>
   )
 }

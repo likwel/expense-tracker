@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Eye, EyeOff, ArrowRight, Check, User, Users, Building2, Search, Plus } from 'lucide-react'
+import { Eye, EyeOff, ArrowRight, Check, User, Users, Building2, Search, Plus, X } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../utils/api'
 
@@ -17,17 +17,16 @@ const USAGE_TYPES = [
   { code: 'business', label: 'Entreprise',  sub: 'Gestion pro',           Icon: Building2, color: '#BA7517', bg: '#FAEEDA' },
 ]
 
-// ── Étape 1 : Infos personnelles ──────────────────────────────────
-function StepPersonal({ f, setF, err }) {
+/* ─── Étape 1 : Infos personnelles ──────────────────────────────── */
+function StepPersonal({ f, setF }) {
   const set = k => e => setF(p => ({ ...p, [k]: e.target.value }))
   return (
     <>
-      <Field label="Nom complet"  type="text"     placeholder="Jean Dupont"      value={f.name}     onChange={set('name')}     required/>
-      <Field label="Email"        type="email"    placeholder="vous@email.com"   value={f.email}    onChange={set('email')}    required/>
-      <Field label="Mot de passe" type="password" placeholder="Min. 8 caractères" value={f.password} onChange={set('password')} required/>
+      <Field label="Nom complet"  type="text"     placeholder="Jean Dupont"       value={f.name}     onChange={set('name')}/>
+      <Field label="Email"        type="email"    placeholder="vous@email.com"    value={f.email}    onChange={set('email')}/>
+      <Field label="Mot de passe" type="password" placeholder="Min. 8 caractères" value={f.password} onChange={set('password')}/>
       <PasswordStrength password={f.password}/>
-
-      <div style={{ marginBottom: 20 }}>
+      <div style={{ marginBottom:20 }}>
         <label style={{ display:'block', fontSize:12, fontWeight:700, color:'#888',
           textTransform:'uppercase', letterSpacing:'0.4px', marginBottom:6 }}>
           Devise principale
@@ -55,7 +54,7 @@ function StepPersonal({ f, setF, err }) {
   )
 }
 
-// ── Étape 2 : Type d'utilisation ──────────────────────────────────
+/* ─── Étape 2 : Type d'utilisation ──────────────────────────────── */
 function StepUsage({ f, setF }) {
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:10, marginBottom:8 }}>
@@ -93,31 +92,58 @@ function StepUsage({ f, setF }) {
   )
 }
 
-// ── Étape 3 : Organisation (famille ou entreprise) ────────────────
+/* ─── Étape 3 : Organisation ─────────────────────────────────────── */
 function StepOrg({ f, setF }) {
   const [query,   setQuery]   = useState('')
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
-  const [mode,    setMode]    = useState(null) // 'join' | 'create' | null
-
-  const search = async (q) => {
-    setQuery(q)
-    if (q.length < 2) { setResults([]); return }
-    setLoading(true)
-    try {
-      const { data } = await api.get(`/organizations/search?q=${encodeURIComponent(q)}&type=${f.usageType}`)
-      setResults(data || [])
-    } catch { setResults([]) }
-    finally { setLoading(false) }
-  }
+  const [mode,    setMode]    = useState(null)
+  const debounceRef = useRef(null)
 
   const typeLabel = f.usageType === 'family' ? 'famille' : 'organisation'
   const TypeIcon  = f.usageType === 'family' ? Users : Building2
   const color     = f.usageType === 'family' ? '#0F6E56' : '#BA7517'
   const bg        = f.usageType === 'family' ? '#E1F5EE' : '#FAEEDA'
 
+  // ✅ Debounce — évite de chercher à chaque frappe
+  const handleChange = (val) => {
+    
+    setQuery(val)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (val.length < 2) { setResults([]); return }
+    debounceRef.current = setTimeout(async () => {
+      setLoading(true)
+      try {
+        const { data } = await api.get(`/organizations/search?q=${encodeURIComponent(val)}&type=${f.usageType}`)
+        setResults(Array.isArray(data) ? data : [])
+      } catch { setResults([]) }
+      finally { setLoading(false) }
+    }, 400)
+  }
+
+  const clear = () => { setQuery(''); setResults([]) }
+
+  const selectOrg = (org) => {
+    setF(p => ({ ...p, orgId: org.id, orgName: '', orgCreate: false }))
+    setMode('join')
+    setQuery(org.name)
+    setResults([])
+  }
+
+  const toggleCreate = () => {
+    const next = mode !== 'create'
+    setMode(next ? 'create' : null)
+    setF(p => ({ ...p, orgId: null, orgCreate: next }))
+  }
+
+  const skip = () => {
+    setF(p => ({ ...p, orgId: null, orgName: '', orgCreate: false }))
+    setMode(null)
+    clear()
+  }
+
   return (
-    <div style={{ marginBottom: 8 }}>
+    <div style={{ marginBottom:8 }}>
       <p style={{ fontSize:13, color:'#888', marginBottom:16, lineHeight:1.5 }}>
         Rejoignez une {typeLabel} existante ou créez-en une nouvelle.
       </p>
@@ -127,36 +153,51 @@ function StepOrg({ f, setF }) {
         <div style={{ marginBottom:12 }}>
           <div style={{ display:'flex', alignItems:'center', gap:8, background:'#fafafa',
             borderRadius:12, padding:'10px 14px', border:'1.5px solid #eee' }}>
-            <Search size={14} color="#bbb"/>
-            <input value={query} onChange={e => search(e.target.value)}
+            <Search size={14} color="#bbb" style={{ flexShrink:0 }}/>
+            <input
+              type="text"
+              value={query}
+              onChange={e => handleChange(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }}
               placeholder={`Rechercher une ${typeLabel}...`}
-              style={{ border:'none', background:'none', outline:'none', fontSize:14, color:'#222', flex:1 }}/>
+              style={{ border:'none', background:'none', outline:'none',
+                fontSize:14, color:'#222', flex:1, minWidth:0 }}
+            />
+            {loading && (
+              <span style={{ width:14, height:14, border:'2px solid #ddd', borderTopColor:'#534AB7',
+                borderRadius:'50%', animation:'spin 0.7s linear infinite',
+                display:'inline-block', flexShrink:0 }}/>
+            )}
+            {query.length > 0 && !loading && (
+              <button type="button" onClick={clear}
+                style={{ background:'none', border:'none', cursor:'pointer', color:'#ccc', padding:0, flexShrink:0 }}>
+                <X size={13}/>
+              </button>
+            )}
           </div>
 
-          {/* Résultats */}
           {results.length > 0 && (
             <div style={{ marginTop:8, display:'flex', flexDirection:'column', gap:6 }}>
               {results.map(org => (
-                <button key={org.id} type="button"
-                  onClick={() => { setF(p => ({ ...p, orgId: org.id, orgName: '', orgCreate: false })); setMode('join') }}
+                <button key={org.id} type="button" onClick={() => selectOrg(org)}
                   style={{
                     display:'flex', alignItems:'center', gap:12, padding:'12px 14px',
                     borderRadius:12, border:`1.5px solid ${f.orgId===org.id ? color : '#eee'}`,
                     background: f.orgId===org.id ? bg : '#fff', cursor:'pointer', textAlign:'left',
                   }}>
-                  <div style={{ width:36, height:36, borderRadius:10, background: bg,
+                  <div style={{ width:36, height:36, borderRadius:10, background:bg,
                     display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                     <TypeIcon size={18} color={color} strokeWidth={1.8}/>
                   </div>
                   <div>
                     <div style={{ fontSize:13, fontWeight:700, color:'#222' }}>{org.name}</div>
                     <div style={{ fontSize:11, color:'#aaa', marginTop:2 }}>
-                      {org._count?.members || 0} membre{(org._count?.members || 0) > 1 ? 's' : ''}
+                      {org._count?.members || 0} membre{(org._count?.members||0) > 1 ? 's' : ''}
                     </div>
                   </div>
                   {f.orgId === org.id && (
                     <div style={{ marginLeft:'auto', width:20, height:20, borderRadius:10,
-                      background: color, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      background:color, display:'flex', alignItems:'center', justifyContent:'center' }}>
                       <Check size={12} color="#fff" strokeWidth={3}/>
                     </div>
                   )}
@@ -174,8 +215,7 @@ function StepOrg({ f, setF }) {
 
       {/* Créer */}
       {mode !== 'join' && (
-        <button type="button"
-          onClick={() => { setMode(mode === 'create' ? null : 'create'); setF(p => ({ ...p, orgId: null, orgCreate: true })) }}
+        <button type="button" onClick={toggleCreate}
           style={{
             width:'100%', display:'flex', alignItems:'center', gap:12, padding:'13px 16px',
             borderRadius:14, cursor:'pointer', textAlign:'left',
@@ -191,9 +231,7 @@ function StepOrg({ f, setF }) {
             <div style={{ fontSize:13, fontWeight:700, color: mode==='create' ? color : '#222' }}>
               Créer une nouvelle {typeLabel}
             </div>
-            <div style={{ fontSize:11, color:'#aaa', marginTop:1 }}>
-              Vous en serez le fondateur
-            </div>
+            <div style={{ fontSize:11, color:'#aaa', marginTop:1 }}>Vous en serez le fondateur</div>
           </div>
         </button>
       )}
@@ -205,8 +243,10 @@ function StepOrg({ f, setF }) {
             Nom de la {typeLabel}
           </label>
           <input
+            type="text"
             value={f.orgName || ''}
             onChange={e => setF(p => ({ ...p, orgName: e.target.value }))}
+            onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }}
             placeholder={f.usageType==='family' ? 'Famille Dupont' : 'Mon Entreprise'}
             style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:12,
               border:'1.5px solid #eee', fontSize:14, color:'#222', outline:'none', background:'#fafafa' }}
@@ -214,9 +254,7 @@ function StepOrg({ f, setF }) {
         </div>
       )}
 
-      {/* Passer cette étape */}
-      <button type="button"
-        onClick={() => { setF(p => ({ ...p, orgId: null, orgName: '', orgCreate: false })); setMode(null) }}
+      <button type="button" onClick={skip}
         style={{ width:'100%', marginTop:12, padding:'10px', borderRadius:12,
           background:'none', border:'none', cursor:'pointer',
           fontSize:13, color:'#bbb', textDecoration:'underline' }}>
@@ -226,22 +264,28 @@ function StepOrg({ f, setF }) {
   )
 }
 
-// ── Sous-composants partagés ──────────────────────────────────────
-function Field({ label, type='text', placeholder, value, onChange, required }) {
-  const [show, setShow]     = useState(false)
-  const [focused, setFocus] = useState(false)
+/* ─── Sous-composants ────────────────────────────────────────────── */
+function Field({ label, type='text', placeholder, value, onChange }) {
+  const [show,    setShow]   = useState(false)
+  const [focused, setFocus]  = useState(false)
   const isPwd = type === 'password'
   return (
     <div style={{ marginBottom:16 }}>
       <label style={{ display:'block', fontSize:12, fontWeight:700, color:'#888',
         textTransform:'uppercase', letterSpacing:'0.4px', marginBottom:6 }}>{label}</label>
       <div style={{ position:'relative' }}>
-        <input type={isPwd && show ? 'text' : type} placeholder={placeholder}
-          value={value} onChange={onChange} required={required}
-          onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
+        <input
+          type={isPwd && show ? 'text' : type}
+          placeholder={placeholder}
+          value={value}
+          onChange={onChange}
+          onFocus={() => setFocus(true)}
+          onBlur={() => setFocus(false)}
+          onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }}
           style={{ width:'100%', padding: isPwd ? '12px 44px 12px 14px' : '12px 14px',
             borderRadius:12, fontSize:14, color:'#222', outline:'none', boxSizing:'border-box',
-            border:`1.5px solid ${focused ? '#534AB7' : '#eee'}`, background:'#fafafa' }}/>
+            border:`1.5px solid ${focused ? '#534AB7' : '#eee'}`, background:'#fafafa' }}
+        />
         {isPwd && (
           <button type="button" onClick={() => setShow(v => !v)}
             style={{ position:'absolute', right:12, top:'50%', transform:'translateY(-50%)',
@@ -256,17 +300,21 @@ function Field({ label, type='text', placeholder, value, onChange, required }) {
 
 function PasswordStrength({ password }) {
   if (!password) return null
-  const hasLen = password.length >= 8, hasNum = /\d/.test(password), hasUp = /[A-Z]/.test(password)
-  const score = [hasLen, hasNum, hasUp].filter(Boolean).length
+  const hasLen = password.length >= 8
+  const hasNum = /\d/.test(password)
+  const hasUp  = /[A-Z]/.test(password)
+  const score  = [hasLen, hasNum, hasUp].filter(Boolean).length
   const colors = ['#E24B4A','#EF9F27','#1D9E75']
   return (
     <div style={{ marginTop:-8, marginBottom:16 }}>
       <div style={{ display:'flex', gap:4, marginBottom:5 }}>
-        {[0,1,2].map(i => <div key={i} style={{ flex:1, height:3, borderRadius:2, background: i<score ? colors[score-1] : '#eee' }}/>)}
+        {[0,1,2].map(i => <div key={i} style={{ flex:1, height:3, borderRadius:2,
+          background: i<score ? colors[score-1] : '#eee' }}/>)}
       </div>
       <div style={{ display:'flex', gap:12 }}>
-        {[{ok:hasLen,text:'8 car.'},{ok:hasNum,text:'Chiffre'},{ok:hasUp,text:'Majuscule'}].map(({ok,text})=>(
-          <span key={text} style={{ fontSize:11, color:ok?'#1D9E75':'#ccc', display:'flex', alignItems:'center', gap:3 }}>
+        {[{ok:hasLen,text:'8 car.'},{ok:hasNum,text:'Chiffre'},{ok:hasUp,text:'Majuscule'}].map(({ok,text}) => (
+          <span key={text} style={{ fontSize:11, color:ok?'#1D9E75':'#ccc',
+            display:'flex', alignItems:'center', gap:3 }}>
             <Check size={10} strokeWidth={ok?3:2}/>{text}
           </span>
         ))}
@@ -294,7 +342,7 @@ function Logo() {
   )
 }
 
-// ── Page principale ───────────────────────────────────────────────
+/* ─── Page principale ────────────────────────────────────────────── */
 const STEPS = ['Compte', 'Type', 'Organisation']
 
 export default function Register() {
@@ -310,15 +358,16 @@ export default function Register() {
   const { register } = useAuth()
   const nav = useNavigate()
 
-  const needsOrg = f.usageType !== 'personal'
+  const needsOrg   = f.usageType !== 'personal'
   const totalSteps = needsOrg ? 3 : 2
   const stepLabels = needsOrg ? STEPS : STEPS.slice(0,2)
+  const isLastStep = step === totalSteps - 1
 
   const nextStep = () => {
     setErr('')
     if (step === 0) {
-      if (!f.name.trim())  return setErr('Le nom est requis')
-      if (!f.email.trim()) return setErr('L\'email est requis')
+      if (!f.name.trim())        return setErr('Le nom est requis')
+      if (!f.email.trim())       return setErr('L\'email est requis')
       if (f.password.length < 6) return setErr('Minimum 6 caractères')
     }
     setStep(s => Math.min(s+1, totalSteps-1))
@@ -347,7 +396,12 @@ export default function Register() {
     } finally { setLoading(false) }
   }
 
-  const isLastStep = step === totalSteps - 1
+  // ✅ handleSubmit toujours preventDefault
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    if (isLastStep) submit(e)
+    else nextStep()
+  }
 
   return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center',
@@ -359,17 +413,16 @@ export default function Register() {
         <Logo/>
 
         {/* Indicateur étapes */}
-        <div style={{ display:'flex', alignItems:'center', gap:0, marginBottom:24 }}>
+        <div style={{ display:'flex', alignItems:'center', marginBottom:24 }}>
           {stepLabels.map((label, i) => (
             <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}>
               <div style={{ display:'flex', alignItems:'center', width:'100%' }}>
                 {i > 0 && <div style={{ flex:1, height:2, background: i<=step ? '#534AB7' : '#eee' }}/>}
                 <div style={{
                   width:26, height:26, borderRadius:13, flexShrink:0,
-                  background: i<step ? '#534AB7' : i===step ? '#534AB7' : '#f0f0f0',
+                  background: i<=step ? '#534AB7' : '#f0f0f0',
                   display:'flex', alignItems:'center', justifyContent:'center',
-                  fontSize:12, fontWeight:700,
-                  color: i<=step ? '#fff' : '#aaa',
+                  fontSize:12, fontWeight:700, color: i<=step ? '#fff' : '#aaa',
                 }}>
                   {i < step ? <Check size={13} strokeWidth={3}/> : i+1}
                 </div>
@@ -392,7 +445,6 @@ export default function Register() {
             : 'Rejoignez ou créez votre groupe'}
         </p>
 
-        {/* Badge essai — étape 0 */}
         {step === 0 && (
           <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6,
             background:'#E1F5EE', borderRadius:10, padding:'9px 14px', marginBottom:18 }}>
@@ -401,7 +453,6 @@ export default function Register() {
           </div>
         )}
 
-        {/* Erreur */}
         {err && (
           <div style={{ background:'#fdecea', color:'#c0392b', borderRadius:10,
             padding:'10px 14px', marginBottom:16, fontSize:13,
@@ -410,12 +461,12 @@ export default function Register() {
           </div>
         )}
 
-        <form onSubmit={isLastStep ? submit : e => { e.preventDefault(); nextStep() }}>
-          {step === 0 && <StepPersonal f={f} setF={setF} err={err}/>}
+        {/* ✅ handleSubmit toujours appelé avec preventDefault */}
+        <form onSubmit={handleSubmit}>
+          {step === 0 && <StepPersonal f={f} setF={setF}/>}
           {step === 1 && <StepUsage   f={f} setF={setF}/>}
           {step === 2 && <StepOrg     f={f} setF={setF}/>}
 
-          {/* CGU — dernière étape */}
           {isLastStep && (
             <label style={{ display:'flex', alignItems:'flex-start', gap:10,
               marginBottom:16, cursor:'pointer' }}>
@@ -430,16 +481,15 @@ export default function Register() {
               </div>
               <span style={{ fontSize:12, color:'#666', lineHeight:1.6 }}>
                 J'accepte les{' '}
-                <Link to="/terms" onClick={e=>e.stopPropagation()}
+                <Link to="/terms" onClick={e => e.stopPropagation()}
                   style={{ color:'#534AB7', fontWeight:600, textDecoration:'none' }}>CGU</Link>
                 {' '}et la{' '}
-                <Link to="/privacy" onClick={e=>e.stopPropagation()}
+                <Link to="/privacy" onClick={e => e.stopPropagation()}
                   style={{ color:'#534AB7', fontWeight:600, textDecoration:'none' }}>confidentialité</Link>
               </span>
             </label>
           )}
 
-          {/* Navigation */}
           <div style={{ display:'flex', gap:10, marginTop:8 }}>
             {step > 0 && (
               <button type="button" onClick={prevStep} style={{

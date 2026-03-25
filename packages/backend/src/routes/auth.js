@@ -109,15 +109,15 @@ router.post('/register', async (req, res) => {
     }
 
     // ── Catégories par défaut ─────────────────────────────────
-    await prisma.category.createMany({
-      data: [
-        { name:'Alimentation', icon:'ShoppingCart',  color:'#E24B4A', type:'expense', userId: user.id },
-        { name:'Transport',    icon:'Car',            color:'#185FA5', type:'expense', userId: user.id },
-        { name:'Logement',     icon:'Home',           color:'#BA7517', type:'expense', userId: user.id },
-        { name:'Salaire',      icon:'Briefcase',      color:'#0F6E56', type:'income',  userId: user.id },
-        { name:'Autres',       icon:'MoreHorizontal', color:'#888888', type:'expense', userId: user.id },
-      ],
-    })
+    // await prisma.category.createMany({
+    //   data: [
+    //     { name:'Alimentation', icon:'ShoppingCart',  color:'#E24B4A', type:'expense', userId: user.id },
+    //     { name:'Transport',    icon:'Car',            color:'#185FA5', type:'expense', userId: user.id },
+    //     { name:'Logement',     icon:'Home',           color:'#BA7517', type:'expense', userId: user.id },
+    //     { name:'Salaire',      icon:'Briefcase',      color:'#0F6E56', type:'income',  userId: user.id },
+    //     { name:'Autres',       icon:'MoreHorizontal', color:'#888888', type:'expense', userId: user.id },
+    //   ],
+    // })
 
     const token = jwt.sign(
       { id: user.id },

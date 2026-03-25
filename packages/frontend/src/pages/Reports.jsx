@@ -256,8 +256,6 @@ export default function Reports() {
   const estimatedExp = estimateAmount(activeRecurExp, mStart, mEnd)
   const estimatedInc = estimateAmount(activeRecurInc, mStart, mEnd)
 
-  console.log('estimatedExp:', estimatedExp, '| estimatedInc:', estimatedInc)
-
   const totalRecurExp = estimatedExp
   const totalRecurInc = estimatedInc
   const totalExp      = punctualExp + totalRecurExp
@@ -298,7 +296,7 @@ export default function Reports() {
   }
   const exportAnnual = async () => {
     try {
-      const r = await reportsApi.annual({ year })
+      const r = await reportsApi.annualPdf({ year })
       download(r.data, `rapport-annuel-${year}.pdf`)
     } catch (e) { console.log(e); alert('Erreur export rapport annuel') }
   }

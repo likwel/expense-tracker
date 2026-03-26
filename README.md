@@ -30,6 +30,7 @@ npm run dev
 pm2 start npm --name "07008e10d084fa" -- run dev
 # 6. Stoper sur pm2
 pm2 stop 07008e10d084fa
+pm2 delete 07008e10d084fa
 ```
 
 ## Commandes disponibles depuis la racine

@@ -414,15 +414,10 @@ router.get('/export/pdf', async (req, res) => {
     // Vérifier si l'utilisateur est en période d'essai
     const userForPlan = await prisma.user.findUnique({
       where:  { id: req.user.id },
-      select: { plan: true, trialPlan: true, trialEndAt: true, planEndAt: true, role: true },
+      select: { plan: true, trialPlan: true, trialEndAt: true, planEndAt: true },
     })
-    const now     = new Date()
-    // ✅ isPaid = plan payant actif ET planEndAt dans le futur
-    const isPaid  = !!(userForPlan?.planEndAt && now <= new Date(userForPlan.planEndAt))
-    // ✅ isTrial = trialEndAt dans le futur ET pas encore converti en plan payant
-    const isTrial = !isPaid && !!(userForPlan?.trialEndAt && now <= new Date(userForPlan.trialEndAt))
-    // ✅ Signature seulement si gratuit ou essai — jamais sur plan payant ni admin
-    const showSignature = userForPlan?.role !== 'admin' && !isPaid
+    const now      = new Date()
+    const isTrial  = !!(userForPlan?.trialEndAt && now <= new Date(userForPlan.trialEndAt))
 
     const userIds = orgId ? await getOrgMemberIds(req.user.id, orgId) : [req.user.id]
     const where   = { userId: { in: userIds } }
@@ -491,7 +486,7 @@ router.get('/export/pdf', async (req, res) => {
     doc.pipe(res)
 
     // ── HEADER ───────────────────────────────────────────────────
-    const headerTop = showSignature ? 18 : 0   // décaler si bandeau essai
+    const headerTop = isTrial ? 18 : 0   // décaler si bandeau essai
     fill(0, headerTop, PW, 100, C.purple)
 
     // Logo dans le header
@@ -509,7 +504,7 @@ router.get('/export/pdf', async (req, res) => {
     fill(0, headerTop + 98, PW, 3, C.purpleMid)
 
     // KPI CARDS
-    const cardY = (showSignature ? 18 : 0) + 116, cardH = 84, cardW = (PW - M * 2 - 20) / 3
+    const cardY = (isTrial ? 18 : 0) + 116, cardH = 84, cardW = (PW - M * 2 - 20) / 3
     const kpiCards = [
       { title: 'Revenus',     value: fmt(totalIncFull), sub: `Ponct. ${fmt(punctualInc)} · Récur. ${fmt(recurInc)}`,   bg: C.tealL,   accent: C.teal,   barPct: 1              },
       { title: 'Dépenses',    value: fmt(totalExpFull), sub: `Ponct. ${fmt(punctualExp)} · Récur. ${fmt(recurExp)}`,   bg: C.redL,    accent: C.red,    barPct: totalIncFull > 0 ? Math.min(totalExpFull / totalIncFull, 1) : 0 },
@@ -663,7 +658,7 @@ router.get('/export/pdf', async (req, res) => {
     // ── SIGNATURE ────────────────────────────────────────────────
     newPage()
     y += 14
-    drawSignature(doc, M, y, PW, M, currency, year, showSignature)
+    drawSignature(doc, M, y, PW, M, currency, year, isTrial)
     y += 86
 
     // ── FOOTER + WATERMARK ────────────────────────────────────────
@@ -726,7 +721,7 @@ router.get('/export/annual/pdf', async (req, res) => {
     doc.pipe(res)
 
     // HEADER
-    const annualHeaderTop = showSignature2 ? 18 : 0
+    const annualHeaderTop = isTrial2 ? 18 : 0
     fill(0, annualHeaderTop, PW, 110, C.purple)
 
     // Logo annuel
@@ -741,6 +736,7 @@ router.get('/export/annual/pdf', async (req, res) => {
          PW - M - 200, annualHeaderTop + 54, { width: 200, align: 'right', lineBreak: false })
     fill(0, annualHeaderTop + 108, PW, 3, C.purpleMid)
 
+    // KPI CARDS
     const cardY = annualHeaderTop + 128, cardH = 90, cardW = (PW - M * 2 - 20) / 3
     ;[
       { title: 'Revenus annuels',   value: fmt(totalInc), sub: `${paidMonths.length} mois actifs`,                     bg: C.tealL,                        accent: C.teal,   barPct: 1,                                                barColor: C.teal   },
@@ -838,20 +834,20 @@ router.get('/export/annual/pdf', async (req, res) => {
     // SIGNATURE
     y += 40
     if (y + 72 > 810) { doc.addPage(); y = M }
-    drawSignature(doc, M, y, PW, M, currency, year, showSignature2)
+    drawSignature(doc, M, y, PW, M, currency, year, isTrial2)
 
     // FOOTER
     doc.flushPages()
     const pageCount = doc.bufferedPageRange().count
     for (let i = 0; i < pageCount; i++) {
       doc.switchToPage(i)
-      if (showSignature2) drawWatermark(doc, PW, PH)
-      drawTrialBanner(doc, PW, showSignature2)
+      if (isTrial2) drawWatermark(doc, PW, PH)
+      drawTrialBanner(doc, PW, isTrial2)
       fill(0, PH - 28, PW, 28, C.purple)
       doc.fillColor('#AFA9EC').font('Helvetica').fontSize(7)
          .text(`Depenzo  ·  Bilan Annuel ${year}  ·  ${currency}  ·  Page ${i + 1} / ${pageCount}`,
            M, PH - 17, { width: PW - M * 2, align: 'center', lineBreak: false })
-      if (showSignature2) {
+      if (isTrial2) {
         doc.fillColor('#7F77DD').font('Helvetica').fontSize(6)
            .text('Rapport généré avec le plan Essai Gratuit Depenzo — depenzo.mg',
              M, PH - 8, { width: PW - M * 2, align: 'center', lineBreak: false })

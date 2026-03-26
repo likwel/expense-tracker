@@ -23,9 +23,10 @@ function Logo() {
 }
 
 function Field({ label, type = 'text', placeholder, value, onChange, required, extra }) {
-  const [show,    setShow]    = useState(false)
-  const [focused, setFocused] = useState(false)
+  const [show, setShow] = useState(false)
   const isPassword = type === 'password'
+  const [focused, setFocused] = useState(false)
+
   return (
     <div style={{ marginBottom: 16 }}>
       <label style={{ display: 'block', fontSize: 12, fontWeight: 700,
@@ -68,21 +69,17 @@ export default function Login() {
   const [err, setErr]     = useState('')
   const [loading, setLoading] = useState(false)
   const { login } = useAuth()
+  const nav = useNavigate()
 
-  // ✅ Plus besoin de navigate — PublicRoute redirige vers /dashboard
-  // dès que user est défini dans AuthContext après login()
+  const set = (k) => (e) => setF(p => ({ ...p, [k]: e.target.value }))
 
-  const set = k => e => setF(p => ({ ...p, [k]: e.target.value }))
-
-  const submit = async e => {
+  const submit = async (e) => {
     e.preventDefault()
     setErr('')
     setLoading(true)
     try {
       await login(f)
-      // ✅ Pas de nav('/dashboard') ici
-      // login() met à jour user dans AuthContext
-      // PublicRoute détecte user !== null et redirige automatiquement
+      nav('/dashboard')
     } catch (e) {
       setErr(e.response?.data?.error || 'Email ou mot de passe incorrect')
     } finally {
@@ -96,7 +93,8 @@ export default function Login() {
       justifyContent: 'center', background: '#f7f6fd', padding: 20,
     }}>
       <div style={{
-        width: '100%', maxWidth: 400, background: '#fff', borderRadius: 20,
+        width: '100%', maxWidth: 400,
+        background: '#fff', borderRadius: 20,
         padding: '36px 32px', border: '0.5px solid #eee',
         boxShadow: '0 4px 32px rgba(83,74,183,0.07)',
       }}>
@@ -109,19 +107,33 @@ export default function Login() {
           Bienvenue sur Dep<span style={{ color: '#534AB7' }}>enzo</span>
         </p>
 
+        {/* Erreur */}
         {err && (
           <div style={{
             background: '#fdecea', color: '#c0392b', borderRadius: 10,
             padding: '10px 14px', marginBottom: 20, fontSize: 13,
             border: '1px solid #f5c6cb', display: 'flex', alignItems: 'center', gap: 8,
           }}>
-            <span>⚠</span> {err}
+            <span style={{ fontSize: 16 }}>⚠</span> {err}
           </div>
         )}
 
         <form onSubmit={submit}>
-          <Field label="Email"        type="email"    placeholder="vous@email.com" value={f.email}    onChange={set('email')}    required/>
-          <Field label="Mot de passe" type="password" placeholder="••••••••"       value={f.password} onChange={set('password')} required
+          <Field
+            label="Email"
+            type="email"
+            placeholder="vous@email.com"
+            value={f.email}
+            onChange={set('email')}
+            required
+          />
+          <Field
+            label="Mot de passe"
+            type="password"
+            placeholder="••••••••"
+            value={f.password}
+            onChange={set('password')}
+            required
             extra={
               <div style={{ textAlign: 'right', marginTop: 6 }}>
                 <Link to="/forgot-password" style={{ fontSize: 12, color: '#534AB7', fontWeight: 600, textDecoration: 'none' }}>
@@ -139,28 +151,42 @@ export default function Login() {
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
             transition: 'background 0.2s',
           }}>
-            {loading
-              ? <><span style={{ width: 16, height: 16, border: '2px solid #EEEDFE',
+            {loading ? (
+              <>
+                <span style={{
+                  width: 16, height: 16, border: '2px solid #EEEDFE',
                   borderTopColor: 'transparent', borderRadius: '50%',
-                  animation: 'spin 0.7s linear infinite', display: 'inline-block' }}/> Connexion...</>
-              : <>Se connecter <ArrowRight size={16}/></>
-            }
+                  animation: 'spin 0.7s linear infinite', display: 'inline-block',
+                }}/>
+                Connexion...
+              </>
+            ) : (
+              <>Se connecter <ArrowRight size={16}/></>
+            )}
           </button>
         </form>
 
         <div style={{ position: 'relative', margin: '24px 0', textAlign: 'center' }}>
           <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, height: 1, background: '#f0f0f0' }}/>
-          <span style={{ position: 'relative', background: '#fff', padding: '0 12px', fontSize: 12, color: '#ccc' }}>ou</span>
+          <span style={{ position: 'relative', background: '#fff', padding: '0 12px', fontSize: 12, color: '#ccc' }}>
+            ou
+          </span>
         </div>
 
         <p style={{ textAlign: 'center', fontSize: 13, color: '#aaa', margin: 0 }}>
           Pas encore de compte ?{' '}
-          <Link to="/register" style={{ color: '#534AB7', fontWeight: 700, textDecoration: 'none' }}>Créer un compte</Link>
+          <Link to="/register" style={{ color: '#534AB7', fontWeight: 700, textDecoration: 'none' }}>
+            Créer un compte
+          </Link>
         </p>
+
         <p style={{ textAlign: 'center', fontSize: 12, color: '#bbb', marginTop: 8 }}>
-          <Link to="/landing" style={{ color: '#bbb', textDecoration: 'none' }}>← Retour à l'accueil</Link>
+          <Link to="/landing" style={{ color: '#bbb', textDecoration: 'none' }}>
+            ← Retour à l'accueil
+          </Link>
         </p>
       </div>
+
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )

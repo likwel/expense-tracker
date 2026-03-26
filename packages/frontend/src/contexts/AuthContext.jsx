@@ -16,10 +16,10 @@ function loadUser() {
 }
 
 export function AuthProvider({ children }) {
-  const [user,       setUserState]  = useState(loadUser)
+  const [user,       setUserState]  = useState(null)      // ✅ null par défaut, pas loadUser
   const [loading,    setLoading]    = useState(true)
   const [ratesReady, setRatesReady] = useState(false)
-  const ratesFetchedFor = useRef(null) // ✅ guard taux de change
+  const ratesFetchedFor = useRef(null)
 
   const setUser = useCallback((updater) => {
     setUserState(prev => {
@@ -29,25 +29,36 @@ export function AuthProvider({ children }) {
     })
   }, [])
 
-  // ── Charger l'user au montage ─────────────────────────────────
+  // ── Vérifier le token au montage ──────────────────────────────
   useEffect(() => {
     const token = localStorage.getItem('token')
-    if (!token) { setLoading(false); setRatesReady(true); return }
+
+    if (!token) {
+      // Pas de token → nettoyer le localStorage au cas où
+      saveUser(null)
+      setLoading(false)
+      setRatesReady(true)
+      return
+    }
+
+    // Token présent → valider avec le serveur
     authApi.me()
-      .then(r => setUser(r.data))
-      .catch(() => {
+      .then(r => {
+        // ✅ Token valide : mettre à jour user depuis le serveur (pas le localStorage)
+        setUser(r.data)
+      })
+      .catch(err => {
+        // ✅ Token invalide ou expiré : tout nettoyer
         localStorage.removeItem('token')
         saveUser(null)
         setUserState(null)
       })
       .finally(() => setLoading(false))
-  }, []) // ✅ une seule fois
+  }, [])
 
   // ── Charger les taux quand la devise de base change ───────────
   useEffect(() => {
     const base = user?.defaultCurrency || 'MGA'
-
-    // ✅ Ne pas refetch si déjà chargé pour cette devise
     if (ratesFetchedFor.current === base) return
     ratesFetchedFor.current = base
 
@@ -87,10 +98,11 @@ export function AuthProvider({ children }) {
   const logout = () => {
     localStorage.removeItem('token')
     localStorage.removeItem('activeOrgId')
+    localStorage.removeItem('user')          // ✅ effacer explicitement
     resetNotifications()
     saveUser(null)
     setUserState(null)
-    ratesFetchedFor.current = null // ✅ reset guard taux
+    ratesFetchedFor.current = null
   }
 
   return (

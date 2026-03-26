@@ -26,6 +26,10 @@ npm run db:seed
 
 # 4. Lancer back + front ensemble
 npm run dev
+# 5. Lancer sur pm2
+pm2 start npm --name "07008e10d084fa" -- run dev
+# 6. Stoper sur pm2
+pm2 stop 07008e10d084fa
 ```
 
 ## Commandes disponibles depuis la racine

@@ -16,7 +16,7 @@ const MENU_ITEMS = [
   { icon: User,       label: 'Profil',       sub: 'Nom, email, avatar',      to: '/settings/profile',  color: '#534AB7', bg: '#EEEDFE' },
   { icon: Settings2,  label: 'Espace Admin', sub: 'Espace administrateur',   to: '/admin',             color: '#f7a93c', bg: '#f6f5cf' },
   { icon: Shield,     label: 'Sécurité',     sub: 'Mot de passe',            to: '/settings/security', color: '#0F6E56', bg: '#E1F5EE' },
-  { icon: Sun,        label: 'Thème',        sub: 'Clair, sombre',           to: '/settings/theme',    color: '#BA7517', bg: '#FAEEDA' },
+  // { icon: Sun,        label: 'Thème',        sub: 'Clair, sombre',           to: '/settings/theme',    color: '#BA7517', bg: '#FAEEDA' },
   { icon: DollarSign, label: 'Devise',       sub: 'Ar, €, $...',             to: '/settings/currency', color: '#185FA5', bg: '#E6F1FB' },
   { icon: CreditCard, label: 'Mon plan',     sub: 'Abonnement, limites',     to: '/settings/plan',     color: '#993556', bg: '#FBEAF0' },
   { icon: Bell,       label: 'Alertes',      sub: 'Notifications',           to: '/notifications',     color: '#854F0B', bg: '#FAEEDA' },

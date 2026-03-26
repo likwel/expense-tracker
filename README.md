@@ -45,7 +45,7 @@ npm run dev
 ## Variables d'environnement — packages/backend/.env
 
 ```
-PORT=3000
+PORT=9995
 DATABASE_URL="postgresql://postgres:password@localhost:5432/expense_db?schema=public"
 JWT_SECRET=un_secret_tres_long_minimum_32_caracteres
 JWT_EXPIRES_IN=7d

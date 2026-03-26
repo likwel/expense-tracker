@@ -7,8 +7,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Ajouter ces champs au model User existant
-// ── Enums ─────────────────────────────────────────────────────────
+// ── Enums ──────────────────────────────────────────────────────────
 
 enum UserRole {
   admin
@@ -18,10 +17,18 @@ enum UserRole {
 }
 
 enum UsageType {
-  personal   // Personnel
-  family     // Famille
-  business   // Entreprise
+  personal
+  family
+  business
   @@map("usage_type")
+}
+
+enum PlanType {
+  free
+  pro
+  family
+  business
+  @@map("plan_type")
 }
 
 enum OrgStatus {
@@ -38,88 +45,84 @@ enum OrgType {
 }
 
 enum MemberRole {
-  founder    // Fondateur — un seul par organisation
-  admin      // Peut gérer les membres
-  member     // Membre standard
-  viewer     // Lecture seule
+  founder
+  admin
+  member
+  viewer
   @@map("member_role")
 }
 
-// ── User ──────────────────────────────────────────────────────────
+// ── User ───────────────────────────────────────────────────────────
 
 model User {
-  id                 Int                @id @default(autoincrement())
-  name               String             @db.VarChar(100)
-  email              String             @unique @db.VarChar(150)
-  password           String             @db.VarChar(255)
+  id              Int       @id @default(autoincrement())
+  name            String    @db.VarChar(100)
+  email           String    @unique @db.VarChar(150)
+  password        String    @db.VarChar(255)
 
-  // Devise d'affichage — changeable par l'utilisateur
-  currency           String             @default("MGA") @db.VarChar(10)
-  // Devise de base — fixée à l'inscription, jamais modifiable
-  // Tous les montants en BDD sont dans cette devise
-  defaultCurrency    String             @default("MGA") @db.VarChar(10) @map("default_currency")
+  currency        String    @default("MGA") @db.VarChar(10)
+  defaultCurrency String    @default("MGA") @db.VarChar(10) @map("default_currency")
 
-  // Rôle global dans l'application
-  role               UserRole           @default(member)
+  role            UserRole  @default(member)
+  usageType       UsageType @default(personal) @map("usage_type")
 
-  // Type d'utilisation principal
-  usageType          UsageType          @default(personal) @map("usage_type")
+  // ── Plan & abonnement ──
+  // plan = plan actif (free | pro | family | business)
+  // Pendant le trial : plan = trialPlan (accès complet)
+  // Après expiration sans paiement : plan = free
+  plan            PlanType  @default(free)
 
-  // Plan & abonnement
-  plan               String             @default("free") @db.VarChar(20)
-  trialStartAt       DateTime?          @map("trial_start_at")
-  trialEndAt         DateTime?          @map("trial_end_at")
-  planStartAt        DateTime?          @map("plan_start_at")
-  planEndAt          DateTime?          @map("plan_end_at")
-  isBanned  Boolean  @default(false) @map("is_banned")
+  // trialPlan = plan visé pendant l'essai ; null une fois converti ou expiré
+  trialPlan       PlanType? @map("trial_plan")
+  trialStartAt    DateTime? @map("trial_start_at")
+  trialEndAt      DateTime? @map("trial_end_at")
 
-  createdAt          DateTime           @default(now()) @map("created_at")
+  // planStartAt / planEndAt = période de l'abonnement payant
+  planStartAt     DateTime? @map("plan_start_at")
+  planEndAt       DateTime? @map("plan_end_at")
 
-  // Relations financières
-  expenses           Expense[]
-  incomes            Income[]
-  budgets            Budget[]
-  categories         Category[]
-  recurringExpenses  RecurringExpense[]
-  recurringIncomes   RecurringIncome[]
-  notifications      Notification[]
-  paymentRequest     PaymentRequest[]
+  isBanned        Boolean   @default(false) @map("is_banned")
+  createdAt       DateTime  @default(now()) @map("created_at")
 
-  // Appartenance à des organisations
-  memberships        OrgMember[]
-
-  // Organisations fondées par cet utilisateur
-  foundedOrgs        Organization[]     @relation("OrgFounder")
+  // ── Relations ──
+  expenses          Expense[]
+  incomes           Income[]
+  budgets           Budget[]
+  categories        Category[]
+  recurringExpenses RecurringExpense[]
+  recurringIncomes  RecurringIncome[]
+  notifications     Notification[]
+  paymentRequests   PaymentRequest[]
+  memberships       OrgMember[]
+  foundedOrgs       Organization[]    @relation("OrgFounder")
 
   @@map("users")
 }
 
-// ── Organisation (Famille ou Entreprise) ──────────────────────────
+// ── Organisation ───────────────────────────────────────────────────
 
 model Organization {
-  id          Int        @id @default(autoincrement())
-  name        String     @db.VarChar(150)
-  type        OrgType                          // 'family' | 'business'
-  status      OrgStatus  @default(active)
-  currency    String     @default("MGA") @db.VarChar(10)
+  id          Int       @id @default(autoincrement())
+  name        String    @db.VarChar(150)
+  type        OrgType
+  status      OrgStatus @default(active)
+  currency    String    @default("MGA") @db.VarChar(10)
 
-  // Fondateur — référence directe pour accès rapide
-  founderId   Int        @map("founder_id")
-  founder     User       @relation("OrgFounder", fields: [founderId], references: [id])
+  founderId   Int       @map("founder_id")
+  founder     User      @relation("OrgFounder", fields: [founderId], references: [id])
 
-  description String?    @db.VarChar(500)
-  logoUrl     String?    @db.VarChar(300) @map("logo_url")
+  description String?   @db.VarChar(500)
+  logoUrl     String?   @db.VarChar(300) @map("logo_url")
 
-  createdAt   DateTime   @default(now()) @map("created_at")
-  updatedAt   DateTime   @updatedAt @map("updated_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  // Membres
   members     OrgMember[]
 
   @@map("organizations")
 }
 
-// ── Table pivot : membres d'une organisation ──────────────────────
+// ── OrgMember ──────────────────────────────────────────────────────
 
 model OrgMember {
   id             Int          @id @default(autoincrement())
@@ -127,17 +130,18 @@ model OrgMember {
   userId         Int          @map("user_id")
   role           MemberRole   @default(member)
   joinedAt       DateTime     @default(now()) @map("joined_at")
-  invitedBy      Int?         @map("invited_by")  // userId qui a invité
+  invitedBy      Int?         @map("invited_by")
 
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // Un utilisateur ne peut être membre qu'une seule fois par organisation
   @@unique([organizationId, userId])
   @@index([userId])
   @@index([organizationId])
   @@map("org_members")
 }
+
+// ── Category ───────────────────────────────────────────────────────
 
 model Category {
   id                Int                @id @default(autoincrement())
@@ -151,10 +155,12 @@ model Category {
   incomes           Income[]
   budgets           Budget[]
   recurringExpenses RecurringExpense[]
-  recurringIncomes  RecurringIncome[]  // ← nouveau
+  recurringIncomes  RecurringIncome[]
 
   @@map("categories")
 }
+
+// ── Expense ────────────────────────────────────────────────────────
 
 model Expense {
   id                 Int               @id @default(autoincrement())
@@ -174,6 +180,8 @@ model Expense {
   @@map("expenses")
 }
 
+// ── Income ─────────────────────────────────────────────────────────
+
 model Income {
   id                Int              @id @default(autoincrement())
   userId            Int              @map("user_id")
@@ -192,6 +200,8 @@ model Income {
   @@map("incomes")
 }
 
+// ── Budget ─────────────────────────────────────────────────────────
+
 model Budget {
   id         Int       @id @default(autoincrement())
   userId     Int       @map("user_id")
@@ -208,16 +218,18 @@ model Budget {
   @@map("budgets")
 }
 
+// ── RecurringExpense ───────────────────────────────────────────────
+
 model RecurringExpense {
   id                Int       @id @default(autoincrement())
   userId            Int       @map("user_id")
   categoryId        Int?      @map("category_id")
   amount            Decimal   @db.Decimal(15, 2)
   description       String?
-  frequency         String    // 'daily' | 'weekly' | 'monthly'
+  frequency         String
   dayOfMonth        Int?      @map("day_of_month")
   dayOfWeek         Int?      @map("day_of_week")
-  dayType           String    @default("all") @map("day_type") // 'all' | 'working' | 'holiday'
+  dayType           String    @default("all") @map("day_type")
   startDate         DateTime  @db.Date @map("start_date")
   endDate           DateTime? @db.Date @map("end_date")
   isActive          Boolean   @default(true) @map("is_active")
@@ -231,13 +243,15 @@ model RecurringExpense {
   @@map("recurring_expenses")
 }
 
+// ── RecurringIncome ────────────────────────────────────────────────
+
 model RecurringIncome {
   id               Int       @id @default(autoincrement())
   userId           Int       @map("user_id")
   categoryId       Int?      @map("category_id")
   amount           Decimal   @db.Decimal(15, 2)
   description      String?
-  frequency        String    // 'daily' | 'weekly' | 'monthly'
+  frequency        String
   dayOfMonth       Int?      @map("day_of_month")
   dayOfWeek        Int?      @map("day_of_week")
   dayType          String    @default("all") @map("day_type")
@@ -254,34 +268,38 @@ model RecurringIncome {
   @@map("recurring_incomes")
 }
 
+// ── PublicHoliday ──────────────────────────────────────────────────
+
 model PublicHoliday {
-  id          Int      @id @default(autoincrement())
-  date        DateTime @db.Date @unique
-  name        String   @db.VarChar(100)
-  country     String   @default("MG") @db.VarChar(5)
+  id      Int      @id @default(autoincrement())
+  date    DateTime @db.Date @unique
+  name    String   @db.VarChar(100)
+  country String   @default("MG") @db.VarChar(5)
 
   @@map("public_holidays")
 }
 
-// Ajouter dans schema.prisma
+// ── Notification ───────────────────────────────────────────────────
 
 model Notification {
   id        Int      @id @default(autoincrement())
   userId    Int      @map("user_id")
-  type      String   @db.VarChar(50)   // 'budget_alert' | 'income_generated' | 'recurring_generated'
-  level     String   @db.VarChar(20)   // 'danger' | 'warning' | 'alert' | 'success' | 'info'
+  type      String   @db.VarChar(50)
+  level     String   @db.VarChar(20)
   title     String   @db.VarChar(200)
   message   String?
-  data      Json?                       // payload complet (amount, pct, category...)
-  isRead    Boolean  @default(false)   @map("is_read")
+  data      Json?
+  isRead    Boolean  @default(false) @map("is_read")
   dedupKey  String?  @unique @db.VarChar(200) @map("dedup_key")
-  createdAt DateTime @default(now())   @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, isRead])
   @@index([userId, createdAt])
   @@map("notifications")
 }
+
+// ── PaymentRequest ─────────────────────────────────────────────────
 
 model PaymentRequest {
   id           Int       @id @default(autoincrement())
@@ -290,8 +308,9 @@ model PaymentRequest {
   operator     String?   @db.VarChar(20)
   senderNumber String?   @db.VarChar(30)  @map("sender_number")
   months       Int
+  planId       PlanType  @map("plan_id")   // plan demandé : pro | family | business
   amount       Decimal   @db.Decimal(15, 2)
-  status       String    @default("pending") @db.VarChar(20)  // pending | approved | rejected
+  status       String    @default("pending") @db.VarChar(20)
   justificatif String?   @db.VarChar(300)
   approvedAt   DateTime? @map("approved_at")
   createdAt    DateTime  @default(now()) @map("created_at")

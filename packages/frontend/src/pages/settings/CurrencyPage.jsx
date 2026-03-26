@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Search, Check, AlertTriangle, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Search, Check, AlertTriangle, RefreshCw, Lock, Zap, X } from 'lucide-react'
 import { useAuth }        from '../../contexts/AuthContext'
 import api                from '../../utils/api'
 import { setRates, fmt, SYMBOLS } from '../../utils/format'
@@ -15,37 +15,124 @@ const CURRENCIES = [
   { code: 'CAD', symbol: 'CA$',  label: 'Dollar canadien'         },
   { code: 'MAD', symbol: 'MAD',  label: 'Dirham marocain'         },
   { code: 'XOF', symbol: 'CFA',  label: 'Franc CFA (UEMOA)'       },
-  { code: 'MUR', symbol: 'Rs',   label: 'Roupie mauricienne'      }, // ₨ → Rs (ASCII safe)
-  { code: 'CNY', symbol: 'CNY',  label: 'Yuan chinois (renminbi)' }, // ¥ ambigu avec JPY → CNY
+  { code: 'MUR', symbol: 'Rs',   label: 'Roupie mauricienne'      },
+  { code: 'CNY', symbol: 'CNY',  label: 'Yuan chinois (renminbi)' },
 ]
 
-// Surcharge locale des symboles pour les devises où SYMBOLS (format.js)
-// pourrait retourner un caractère non supporté
-const SYMBOL_OVERRIDE = {
-  MUR: 'Rs',
-  MAD: 'MAD',
-  CNY: 'CNY',
-}
-
-// Résout le symbole à afficher : override local en priorité, puis SYMBOLS, puis code
+const SYMBOL_OVERRIDE = { MUR: 'Rs', MAD: 'MAD', CNY: 'CNY' }
 const getSymbol = (code) => SYMBOL_OVERRIDE[code] || SYMBOLS[code] || code
 
 const DEMO_AMOUNT = 100000
 
+// Autorisé si : admin global OU plan pro/premium (pas free)
+const canEditCurrency = (user) => {
+  if (!user) return false
+  if (user.role === 'admin') return true          // UserRole.admin (super admin)
+  return user.plan !== 'free'                     // pro, premium, etc.
+}
+
+// ── Modal upgrade ─────────────────────────────────────────────────────────────
+function UpgradeModal({ onClose, onUpgrade }) {
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 100,
+      background: 'rgba(0,0,0,0.45)', display: 'flex',
+      alignItems: 'flex-end', justifyContent: 'center',
+    }} onClick={onClose}>
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          width: '100%', maxWidth: 480,
+          background: '#fff', borderRadius: '24px 24px 0 0',
+          padding: '28px 24px 40px', boxShadow: '0 -8px 40px rgba(0,0,0,0.15)',
+        }}
+      >
+        {/* Poignée */}
+        <div style={{ width: 40, height: 4, borderRadius: 2,
+          background: '#e0e0e0', margin: '0 auto 24px' }}/>
+
+        {/* Icône */}
+        <div style={{
+          width: 64, height: 64, borderRadius: 20,
+          background: 'linear-gradient(135deg, #6C5CE7, #a29bfe)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          margin: '0 auto 16px',
+        }}>
+          <Lock size={28} color="#fff"/>
+        </div>
+
+        {/* Texte */}
+        <h2 style={{ textAlign: 'center', fontSize: 18, fontWeight: 800,
+          color: '#1a1a2e', margin: '0 0 10px' }}>
+          Fonctionnalité Pro
+        </h2>
+        <p style={{ textAlign: 'center', fontSize: 13, color: '#888',
+          lineHeight: 1.6, margin: '0 0 24px' }}>
+          La modification de la devise d'affichage est réservée aux comptes&nbsp;
+          <strong style={{ color: '#6C5CE7' }}>Pro</strong> et{' '}
+          <strong style={{ color: '#6C5CE7' }}>Super Admin</strong>.
+          <br/>Passez à Pro pour débloquer cette option et bien d'autres fonctionnalités.
+        </p>
+
+        {/* Features Pro */}
+        {[
+          'Changement de devise d\'affichage',
+          'Rapports et exports avancés',
+          'Budgets illimités',
+          'Support prioritaire',
+        ].map(f => (
+          <div key={f} style={{ display: 'flex', alignItems: 'center', gap: 10,
+            marginBottom: 10 }}>
+            <div style={{ width: 22, height: 22, borderRadius: 11,
+              background: '#f0eeff', display: 'flex', alignItems: 'center',
+              justifyContent: 'center', flexShrink: 0 }}>
+              <Check size={12} color="#6C5CE7" strokeWidth={3}/>
+            </div>
+            <span style={{ fontSize: 13, color: '#444' }}>{f}</span>
+          </div>
+        ))}
+
+        {/* Boutons */}
+        <button onClick={onUpgrade} style={{
+          width: '100%', padding: '14px', borderRadius: 14, marginTop: 20,
+          background: 'linear-gradient(135deg, #6C5CE7, #a29bfe)',
+          border: 'none', color: '#fff', fontWeight: 700, fontSize: 15,
+          cursor: 'pointer', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', gap: 8,
+          boxShadow: '0 4px 20px rgba(108,92,231,0.4)',
+        }}>
+          <Zap size={16} fill="#fff" color="#fff"/>
+          Passer à Pro
+        </button>
+        <button onClick={onClose} style={{
+          width: '100%', padding: '12px', borderRadius: 14, marginTop: 10,
+          background: 'none', border: '1.5px solid #eee',
+          color: '#888', fontWeight: 600, fontSize: 14, cursor: 'pointer',
+        }}>
+          Plus tard
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Page principale ───────────────────────────────────────────────────────────
 export default function CurrencyPage() {
   const navigate          = useNavigate()
   const { user, setUser } = useAuth()
 
+  const canEdit      = canEditCurrency(user)
   const baseCurrency = user?.defaultCurrency || 'MGA'
   const baseSymbol   = getSymbol(baseCurrency)
 
-  const [selected,   setSelected]   = useState(user?.currency || baseCurrency)
-  const [query,      setQuery]      = useState('')
-  const [saving,     setSaving]     = useState(false)
-  const [msg,        setMsg]        = useState(null)
-  const [localRates, setLocalRates] = useState(null)
-  const [rateLoad,   setRateLoad]   = useState(false)
-  const [rateErr,    setRateErr]    = useState(false)
+  const [selected,     setSelected]     = useState(user?.currency || baseCurrency)
+  const [query,        setQuery]        = useState('')
+  const [saving,       setSaving]       = useState(false)
+  const [msg,          setMsg]          = useState(null)
+  const [localRates,   setLocalRates]   = useState(null)
+  const [rateLoad,     setRateLoad]     = useState(false)
+  const [rateErr,      setRateErr]      = useState(false)
+  const [showUpgrade,  setShowUpgrade]  = useState(false)   // ← modal
 
   useEffect(() => {
     setRateLoad(true)
@@ -76,6 +163,9 @@ export default function CurrencyPage() {
   }
 
   const handleSave = async () => {
+    // Utilisateur non autorisé → ouvrir le modal upgrade
+    if (!canEdit) return setShowUpgrade(true)
+
     if (selected === user?.currency) return showMsg(false, 'Devise déjà sélectionnée')
     setSaving(true)
     try {
@@ -116,6 +206,17 @@ export default function CurrencyPage() {
 
   return (
     <div style={{ paddingBottom: 100, minHeight: '100vh', background: '#f7f6fd' }}>
+
+      {/* Modal upgrade */}
+      {showUpgrade && (
+        <UpgradeModal
+          onClose={() => setShowUpgrade(false)}
+          onUpgrade={() => {
+            setShowUpgrade(false)
+            navigate('/settings/plan')
+          }}
+        />
+      )}
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12,
@@ -281,7 +382,7 @@ export default function CurrencyPage() {
         })}
       </div>
 
-      {/* Bouton sauvegarder */}
+      {/* Bouton sauvegarder — visible pour tous dès qu'une devise différente est sélectionnée */}
       {isChanged && (
         <div style={{ position: 'fixed', bottom: 84, left: '50%',
           transform: 'translateX(-50%)', width: 'calc(100% - 32px)', maxWidth: 448, zIndex: 20 }}>
@@ -291,7 +392,10 @@ export default function CurrencyPage() {
             border: 'none', color: '#fff', fontWeight: 700, fontSize: 15,
             cursor: saving ? 'not-allowed' : 'pointer',
             boxShadow: '0 4px 20px rgba(83,74,183,0.35)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
           }}>
+            {/* Icône cadenas pour les utilisateurs gratuits */}
+            {!canEdit && <Lock size={15} color="#fff"/>}
             {saving ? 'Mise à jour...' : `Appliquer — ${getSymbol(selected)} ${selected}`}
           </button>
         </div>

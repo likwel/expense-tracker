@@ -403,33 +403,42 @@ router.get('/annual', async (req, res) => {
   }
 })
 
+// ── Helper partagé : résout showSignature depuis userId ───────────
+async function resolveShowSignature(userId) {
+  const u = await prisma.user.findUnique({
+    where:  { id: userId },
+    select: { planEndAt: true, trialEndAt: true, role: true },
+  })
+  const now    = new Date()
+  const isPaid = !!(u?.planEndAt  && now <= new Date(u.planEndAt))
+  return {
+    isPaid,
+    isTrial:       !isPaid && !!(u?.trialEndAt && now <= new Date(u.trialEndAt)),
+    showSignature: u?.role !== 'admin' && !isPaid,
+  }
+}
+
 // ── GET /export/pdf ───────────────────────────────────────────────
 router.get('/export/pdf', async (req, res) => {
   const { month, year, orgId } = req.query
   if (!month || !year) return res.status(400).json({ error: 'month et year requis' })
   try {
-    const { currency, convert } = await getUserCurrency(req.user.id)
-    const fmt  = n => fmtCurrency(convert(n), currency)
-
-    // Vérifier si l'utilisateur est en période d'essai
-    const userForPlan = await prisma.user.findUnique({
-      where:  { id: req.user.id },
-      select: { plan: true, trialPlan: true, trialEndAt: true, planEndAt: true },
-    })
-    const now      = new Date()
-    const isTrial  = !!(userForPlan?.trialEndAt && now <= new Date(userForPlan.trialEndAt))
+    const { currency, convert }              = await getUserCurrency(req.user.id)
+    const { showSignature, isTrial }         = await resolveShowSignature(req.user.id)
+    const fmt = n => fmtCurrency(convert(n), currency)
 
     const userIds = orgId ? await getOrgMemberIds(req.user.id, orgId) : [req.user.id]
     const where   = { userId: { in: userIds } }
 
-    const mStart = new Date(Number(year), Number(month) - 1, 1)
-    const mEnd   = new Date(Number(year), Number(month), 0)
+    const mStart      = new Date(Number(year), Number(month) - 1, 1)
+    const mEnd        = new Date(Number(year), Number(month), 0)
     const daysInMonth = mEnd.getDate()
     const workingDays = Math.round(daysInMonth * 5 / 7)
 
     const filterActive = list => list.filter(r => {
       if (!r.isActive) return false
-      const start = new Date(r.startDate), end = r.endDate ? new Date(r.endDate) : null
+      const start = new Date(r.startDate)
+      const end   = r.endDate ? new Date(r.endDate) : null
       return start <= mEnd && (!end || end >= mStart)
     })
     const estimateRec = list => list.reduce((s, r) => {
@@ -457,41 +466,35 @@ router.get('/export/pdf', async (req, res) => {
 
     const generatedRecurExp = expenses.filter(e => e.recurringExpenseId != null).reduce((s, e) => s + Number(e.amount), 0)
     const generatedRecurInc = incomes.filter(i => i.recurringIncomeId  != null).reduce((s, i) => s + Number(i.amount), 0)
-    const recurExp    = generatedRecurExp > 0 ? generatedRecurExp : estimateRec(filterActive(allRecurExp))
-    const recurInc    = generatedRecurInc > 0 ? generatedRecurInc : estimateRec(filterActive(allRecurInc))
-    const punctualExp = expenses.reduce((s, e) => s + Number(e.amount), 0) - generatedRecurExp
-    const punctualInc = incomes.reduce((s, i)  => s + Number(i.amount), 0) - generatedRecurInc
+    const recurExp     = generatedRecurExp > 0 ? generatedRecurExp : estimateRec(filterActive(allRecurExp))
+    const recurInc     = generatedRecurInc > 0 ? generatedRecurInc : estimateRec(filterActive(allRecurInc))
+    const punctualExp  = expenses.reduce((s, e) => s + Number(e.amount), 0) - generatedRecurExp
+    const punctualInc  = incomes.reduce((s, i)  => s + Number(i.amount), 0) - generatedRecurInc
     const totalExpFull = punctualExp + recurExp
     const totalIncFull = punctualInc + recurInc
     const balance      = totalIncFull - totalExpFull
     const savingPct    = totalIncFull > 0 ? Math.round((balance / totalIncFull) * 100) : 0
 
-    // Grouper dépenses par catégorie pour le résumé
     const expByCat = {}
     expenses.forEach(e => {
       const k = e.category?.name || 'Sans catégorie'
       if (!expByCat[k]) expByCat[k] = 0
       expByCat[k] += Number(e.amount)
     })
-    const topCats = Object.entries(expByCat)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
+    const topCats = Object.entries(expByCat).sort((a, b) => b[1] - a[1]).slice(0, 5)
 
-    const doc  = new PDFDoc({ margin: 0, size: 'A4', bufferPages: true })
-    const PW   = 595, PH = 842, M = 40
+    const doc = new PDFDoc({ margin: 0, size: 'A4', bufferPages: true })
+    const PW  = 595, PH = 842, M = 40
     const { fill, T, hLine, bar } = makePdfHelpers(doc, M, PW, PH)
 
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `attachment; filename=rapport-${year}-${String(month).padStart(2,'0')}.pdf`)
     doc.pipe(res)
 
-    // ── HEADER ───────────────────────────────────────────────────
-    const headerTop = isTrial ? 18 : 0   // décaler si bandeau essai
+    // HEADER
+    const headerTop = showSignature ? 18 : 0
     fill(0, headerTop, PW, 100, C.purple)
-
-    // Logo dans le header
     drawLogo(doc, M, headerTop + 18, 36)
-
     doc.fillColor(C.white).font('Helvetica-Bold').fontSize(20)
        .text(`Relevé Financier — ${MONTHS_FR[Number(month) - 1]} ${year}`,
          M + 46, headerTop + 24, { width: PW - M * 2 - 46, lineBreak: false })
@@ -504,37 +507,39 @@ router.get('/export/pdf', async (req, res) => {
     fill(0, headerTop + 98, PW, 3, C.purpleMid)
 
     // KPI CARDS
-    const cardY = (isTrial ? 18 : 0) + 116, cardH = 84, cardW = (PW - M * 2 - 20) / 3
+    const cardY = headerTop + 116
+    const cardH = 84
+    const cardW = (PW - M * 2 - 20) / 3
     const kpiCards = [
-      { title: 'Revenus',     value: fmt(totalIncFull), sub: `Ponct. ${fmt(punctualInc)} · Récur. ${fmt(recurInc)}`,   bg: C.tealL,   accent: C.teal,   barPct: 1              },
-      { title: 'Dépenses',    value: fmt(totalExpFull), sub: `Ponct. ${fmt(punctualExp)} · Récur. ${fmt(recurExp)}`,   bg: C.redL,    accent: C.red,    barPct: totalIncFull > 0 ? Math.min(totalExpFull / totalIncFull, 1) : 0 },
-      { title: 'Solde net',   value: `${balance >= 0 ? '+' : ''}${fmt(balance)}`,
-        sub: `Taux d'épargne : ${savingPct} %`, bg: balance >= 0 ? C.purpleL : C.redL,
-        accent: balance >= 0 ? C.purple : C.red, barPct: totalIncFull > 0 ? Math.max(0, balance / totalIncFull) : 0 },
+      { title: 'Revenus',   value: fmt(totalIncFull), sub: `Ponct. ${fmt(punctualInc)} · Récur. ${fmt(recurInc)}`,   bg: C.tealL,   accent: C.teal,   barPct: 1 },
+      { title: 'Dépenses',  value: fmt(totalExpFull), sub: `Ponct. ${fmt(punctualExp)} · Récur. ${fmt(recurExp)}`,   bg: C.redL,    accent: C.red,    barPct: totalIncFull > 0 ? Math.min(totalExpFull / totalIncFull, 1) : 0 },
+      { title: 'Solde net', value: `${balance >= 0 ? '+' : ''}${fmt(balance)}`,
+        sub: `Taux d'épargne : ${savingPct} %`,
+        bg: balance >= 0 ? C.purpleL : C.redL,
+        accent: balance >= 0 ? C.purple : C.red,
+        barPct: totalIncFull > 0 ? Math.max(0, balance / totalIncFull) : 0 },
     ]
     kpiCards.forEach((c, i) => {
       const cx = M + i * (cardW + 10)
       fill(cx, cardY, cardW, cardH, c.bg, 8)
       fill(cx, cardY, 4, cardH, c.accent, 0)
-      T(c.title, cx + 14, cardY + 10, { color: c.accent, bold: true, size: 8, w: cardW - 20 })
+      T(c.title, cx + 14, cardY + 10, { color: c.accent, bold: true, size: 8,  w: cardW - 20 })
       T(c.value, cx + 14, cardY + 23, { color: C.text,   bold: true, size: 12, w: cardW - 20 })
       bar(cx + 14, cardY + 50, cardW - 28, 4, c.barPct, c.accent, '#DDDDE8')
-      T(c.sub, cx + 14, cardY + 60, { color: C.muted, size: 7, w: cardW - 20 })
+      T(c.sub,   cx + 14, cardY + 60, { color: C.muted, size: 7, w: cardW - 20 })
     })
 
-    // ── TOP CATÉGORIES ───────────────────────────────────────────
+    // TOP CATÉGORIES
     let y = cardY + cardH + 16
     if (topCats.length > 0) {
       fill(M, y, PW - M * 2, 22, C.purple, 6)
       T('Top catégories de dépenses', M + 12, y + 6, { color: C.white, bold: true, size: 10, w: PW - M * 2 })
       y += 28
-
       const maxCat = topCats[0][1]
       topCats.forEach(([name, total]) => {
         fill(M, y, PW - M * 2, 18, C.rowAlt, 0)
         T(name, M + 10, y + 5, { color: C.text, size: 8, w: 150 })
-        const barX = M + 170, barW = PW - M * 2 - 170 - 90
-        bar(barX, y + 7, barW, 4, total / maxCat, C.red, '#F5D8D8')
+        bar(M + 170, y + 7, PW - M * 2 - 170 - 90, 4, total / maxCat, C.red, '#F5D8D8')
         T(fmt(total), M + 10, y + 5, { color: C.red, bold: true, size: 8, w: PW - M * 2 - 20, align: 'right' })
         hLine(y + 18, C.border, 0.3)
         y += 18
@@ -542,7 +547,6 @@ router.get('/export/pdf', async (req, res) => {
       y += 10
     }
 
-    // ── Helper section ────────────────────────────────────────────
     const newPage = () => {
       if (y > 760) {
         doc.addPage(); y = M
@@ -552,24 +556,13 @@ router.get('/export/pdf', async (req, res) => {
       }
     }
 
-    const sectionHeader = (label, total, accentColor, bgColor) => {
-      newPage()
-      fill(M, y, PW - M * 2, 26, bgColor, 6)
-      fill(M, y, 4, 26, accentColor, 0)
-      T(label, M + 14, y + 7, { color: accentColor, bold: true, size: 11, w: PW - M * 2 - 120 })
-      T(fmt(total), M + 14, y + 7, { color: accentColor, bold: true, size: 11, w: PW - M * 2 - 20, align: 'right' })
-      y += 32
-    }
-
-    // En-têtes colonnes liste
     const listCols = [
-      { label: 'Date',        w: 52,  align: 'left'  },
-      { label: 'Description', w: 160, align: 'left'  },
-      { label: 'Catégorie',   w: 110, align: 'left'  },
-      { label: 'Type',        w: 68,  align: 'center'},
-      { label: 'Montant',     w: 95,  align: 'right' },
+      { label: 'Date',        w: 52,  align: 'left'   },
+      { label: 'Description', w: 160, align: 'left'   },
+      { label: 'Catégorie',   w: 110, align: 'left'   },
+      { label: 'Type',        w: 68,  align: 'center' },
+      { label: 'Montant',     w: 95,  align: 'right'  },
     ]
-    const listTotalW = listCols.reduce((s, c) => s + c.w, 0)
 
     const tableHeader = () => {
       fill(M, y, PW - M * 2, 18, C.rowAlt, 0)
@@ -579,72 +572,65 @@ router.get('/export/pdf', async (req, res) => {
         T(col.label, cx, y + 5, { color: C.muted, bold: true, size: 7, w: col.w, align: col.align })
         cx += col.w
       })
-      y += 18
-      hLine(y, C.border)
+      y += 18; hLine(y, C.border)
     }
 
     const tableRow = (item, idx, isIncome) => {
       newPage()
       const rowH = 18
       fill(M, y, PW - M * 2, rowH, idx % 2 === 0 ? C.rowAlt : C.white, 0)
-
-      const date = new Date(item.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
-      const desc = item.description || item.category?.name || '—'
-      const cat  = item.category?.name || '—'
-      const type = item.isRecurring ? '~ Récurrent' : '· Ponctuel'
-      const amt  = fmt(item.amount)
-
       let cx = M + 8
-      T(date,  cx, y + 5, { size: 8, w: listCols[0].w }); cx += listCols[0].w
-      T(desc,  cx, y + 5, { size: 8, w: listCols[1].w - 8 }); cx += listCols[1].w
-      T(cat,   cx, y + 5, { size: 8, w: listCols[2].w - 8, color: C.muted }); cx += listCols[2].w
-      T(type,  cx, y + 5, { size: 7, w: listCols[3].w, align: 'center',
-        color: item.isRecurring ? C.purple : C.muted }); cx += listCols[3].w
-      T(amt,   cx, y + 5, {
+      T(new Date(item.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }),
+        cx, y + 5, { size: 8, w: listCols[0].w }); cx += listCols[0].w
+      T(item.description || item.category?.name || '—',
+        cx, y + 5, { size: 8, w: listCols[1].w - 8 }); cx += listCols[1].w
+      T(item.category?.name || '—',
+        cx, y + 5, { size: 8, w: listCols[2].w - 8, color: C.muted }); cx += listCols[2].w
+      T(item.isRecurring ? '~ Récurrent' : '· Ponctuel',
+        cx, y + 5, { size: 7, w: listCols[3].w, align: 'center',
+          color: item.isRecurring ? C.purple : C.muted }); cx += listCols[3].w
+      T(fmt(item.amount), cx, y + 5, {
         size: 8, bold: true, w: listCols[4].w, align: 'right',
         color: isIncome ? C.teal : C.red,
       })
-
-      hLine(y + rowH, C.border, 0.3)
-      y += rowH
+      hLine(y + rowH, C.border, 0.3); y += rowH
     }
 
-    const sectionFooter = (pLabel, pVal, rLabel, rVal, total, color) => {
+    const sectionHeader = (label, total, accent, bg) => {
+      newPage()
+      fill(M, y, PW - M * 2, 26, bg, 6)
+      fill(M, y, 4, 26, accent, 0)
+      T(label, M + 14, y + 7, { color: accent, bold: true, size: 11, w: PW - M * 2 - 120 })
+      T(fmt(total), M + 14, y + 7, { color: accent, bold: true, size: 11, w: PW - M * 2 - 20, align: 'right' })
+      y += 32
+    }
+
+    const sectionFooter = (pVal, rVal, total, color) => {
       newPage()
       fill(M, y, PW - M * 2, 22, color + '22', 4)
-      T(`${pLabel} : ${fmt(pVal)}`, M + 14, y + 7, { color: C.muted, size: 8, w: 200 })
-      T(`${rLabel} : ${fmt(rVal)}`, M + 14, y + 7, { color: C.muted, size: 8, w: PW - M * 2 - 20, align: 'center' })
-      T(`Total : ${fmt(total)}`,    M + 14, y + 7, { color, bold: true, size: 9, w: PW - M * 2 - 20, align: 'right' })
+      T(`Ponctuels : ${fmt(pVal)}`, M + 14, y + 7, { color: C.muted, size: 8, w: 200 })
+      T(`Récurrents : ${fmt(rVal)}`, M + 14, y + 7, { color: C.muted, size: 8, w: PW - M * 2 - 20, align: 'center' })
+      T(`Total : ${fmt(total)}`, M + 14, y + 7, { color, bold: true, size: 9, w: PW - M * 2 - 20, align: 'right' })
       y += 28
     }
 
-    // ── SECTION REVENUS ──────────────────────────────────────────
+    // REVENUS
     sectionHeader('Revenus du mois', totalIncFull, C.teal, C.tealL)
     tableHeader()
-    if (!incomes.length) {
-      T('Aucun revenu enregistré ce mois', M + 10, y + 6, { color: C.muted, size: 9, w: PW - M * 2 })
-      y += 22
-    } else {
-      incomes.forEach((r, i) => tableRow(r, i, true))
-    }
-    sectionFooter('Ponctuels', punctualInc, 'Récurrents', recurInc, totalIncFull, C.teal)
+    if (!incomes.length) { T('Aucun revenu enregistré ce mois', M + 10, y + 6, { color: C.muted, size: 9, w: PW - M * 2 }); y += 22 }
+    else incomes.forEach((r, i) => tableRow(r, i, true))
+    sectionFooter(punctualInc, recurInc, totalIncFull, C.teal)
 
-    // ── SECTION DÉPENSES ─────────────────────────────────────────
+    // DÉPENSES
     sectionHeader('Dépenses du mois', totalExpFull, C.red, C.redL)
     tableHeader()
-    if (!expenses.length) {
-      T('Aucune dépense enregistrée ce mois', M + 10, y + 6, { color: C.muted, size: 9, w: PW - M * 2 })
-      y += 22
-    } else {
-      expenses.forEach((r, i) => tableRow(r, i, false))
-    }
-    sectionFooter('Ponctuelles', punctualExp, 'Récurrentes', recurExp, totalExpFull, C.red)
+    if (!expenses.length) { T('Aucune dépense enregistrée ce mois', M + 10, y + 6, { color: C.muted, size: 9, w: PW - M * 2 }); y += 22 }
+    else expenses.forEach((r, i) => tableRow(r, i, false))
+    sectionFooter(punctualExp, recurExp, totalExpFull, C.red)
 
-    // ── SOLDE FINAL ──────────────────────────────────────────────
+    // SOLDE FINAL
     newPage()
-    y += 6
-    hLine(y, C.purple, 1.5)
-    y += 8
+    y += 6; hLine(y, C.purple, 1.5); y += 8
     fill(M, y, PW - M * 2, 36, balance >= 0 ? C.purpleL : C.redL, 8)
     fill(M, y, 4, 36, balance >= 0 ? C.purple : C.red, 0)
     T('SOLDE NET DU MOIS', M + 14, y + 8, { bold: true, size: 11, w: PW - M * 2 - 120, color: C.text })
@@ -655,29 +641,28 @@ router.get('/export/pdf', async (req, res) => {
     T(`Taux d'épargne : ${savingPct} %`, M + 14, y + 22, { size: 8, color: C.muted, w: PW - M * 2 - 20 })
     y += 44
 
-    // ── SIGNATURE ────────────────────────────────────────────────
-    newPage()
-    y += 14
-    drawSignature(doc, M, y, PW, M, currency, year, isTrial)
-    y += 86
+    // SIGNATURE (seulement si showSignature)
+    if (showSignature) {
+      y += 14
+      newPage()
+      drawSignature(doc, M, y, PW, M, currency, year, isTrial)
+      y += 86
+    }
 
-    // ── FOOTER + WATERMARK ────────────────────────────────────────
+    // FOOTER
     doc.flushPages()
     const pageCount = doc.bufferedPageRange().count
     for (let i = 0; i < pageCount; i++) {
       doc.switchToPage(i)
-      // Watermark specimen sur chaque page si trial
-      if (isTrial) drawWatermark(doc, PW, PH)
-      // Bandeau essai en haut
-      drawTrialBanner(doc, PW, isTrial)
-      // Footer
+      if (showSignature) drawWatermark(doc, PW, PH)
+      drawTrialBanner(doc, PW, showSignature)
       fill(0, PH - 26, PW, 26, C.purple)
       doc.fillColor('#AFA9EC').font('Helvetica').fontSize(7)
          .text(`Depenzo  ·  ${MONTHS_FR[Number(month) - 1]} ${year}  ·  ${currency}  ·  Page ${i + 1} / ${pageCount}`,
            M, PH - 15, { width: PW - M * 2, align: 'center', lineBreak: false })
-      if (isTrial) {
+      if (showSignature) {
         doc.fillColor('#7F77DD').font('Helvetica').fontSize(6)
-           .text('Rapport généré avec le plan Essai Gratuit Depenzo — dépenzo.mg',
+           .text('Rapport généré avec Depenzo — depenzo.mg',
              M, PH - 7, { width: PW - M * 2, align: 'center', lineBreak: false })
       }
     }
@@ -693,14 +678,9 @@ router.get('/export/annual/pdf', async (req, res) => {
   const { year, orgId } = req.query
   if (!year) return res.status(400).json({ error: 'Année requise' })
   try {
-    const { currency, convert } = await getUserCurrency(req.user.id)
+    const { currency, convert }           = await getUserCurrency(req.user.id)
+    const { showSignature, isTrial }      = await resolveShowSignature(req.user.id)
     const fmt = n => fmtCurrency(convert(n), currency)
-
-    const userForPlan2 = await prisma.user.findUnique({
-      where:  { id: req.user.id },
-      select: { trialEndAt: true },
-    })
-    const isTrial2 = !!(userForPlan2?.trialEndAt && new Date() <= new Date(userForPlan2.trialEndAt))
 
     const userIds    = orgId ? await getOrgMemberIds(req.user.id, orgId) : [req.user.id]
     const months     = await Promise.all(Array.from({ length: 12 }, (_, i) => i + 1).map(m => getMonthTotals(userIds, m, year)))
@@ -721,27 +701,26 @@ router.get('/export/annual/pdf', async (req, res) => {
     doc.pipe(res)
 
     // HEADER
-    const annualHeaderTop = isTrial2 ? 18 : 0
-    fill(0, annualHeaderTop, PW, 110, C.purple)
-
-    // Logo annuel
-    drawLogo(doc, M, annualHeaderTop + 20, 38)
-
+    const headerTop = showSignature ? 18 : 0
+    fill(0, headerTop, PW, 110, C.purple)
+    drawLogo(doc, M, headerTop + 20, 38)
     doc.fillColor(C.white).font('Helvetica-Bold').fontSize(22)
-       .text(`Bilan Annuel ${year}`, M + 50, annualHeaderTop + 28, { width: PW - M * 2 - 50, lineBreak: false })
+       .text(`Bilan Annuel ${year}`, M + 50, headerTop + 28, { width: PW - M * 2 - 50, lineBreak: false })
     doc.fillColor('#AFA9EC').font('Helvetica').fontSize(10)
-       .text(`Rapport financier annuel · Devise : ${currency}`, M + 50, annualHeaderTop + 54, { width: 300, lineBreak: false })
+       .text(`Rapport financier annuel · Devise : ${currency}`, M + 50, headerTop + 54, { width: 300, lineBreak: false })
     doc.fillColor('#AFA9EC').fontSize(9)
        .text(`Émis le ${new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}`,
-         PW - M - 200, annualHeaderTop + 54, { width: 200, align: 'right', lineBreak: false })
-    fill(0, annualHeaderTop + 108, PW, 3, C.purpleMid)
+         PW - M - 200, headerTop + 54, { width: 200, align: 'right', lineBreak: false })
+    fill(0, headerTop + 108, PW, 3, C.purpleMid)
 
     // KPI CARDS
-    const cardY = annualHeaderTop + 128, cardH = 90, cardW = (PW - M * 2 - 20) / 3
+    const cardY = headerTop + 128
+    const cardH = 90
+    const cardW = (PW - M * 2 - 20) / 3
     ;[
-      { title: 'Revenus annuels',   value: fmt(totalInc), sub: `${paidMonths.length} mois actifs`,                     bg: C.tealL,                        accent: C.teal,   barPct: 1,                                                barColor: C.teal   },
-      { title: 'Dépenses annuelles',value: fmt(totalExp), sub: totalInc > 0 ? `${Math.round((totalExp/totalInc)*100)} % des revenus` : '—', bg: C.redL, accent: C.red,    barPct: totalInc > 0 ? totalExp / totalInc : 0,           barColor: C.red    },
-      { title: 'Épargne nette',     value: fmt(balance),  sub: `Taux d'épargne : ${saving} %`,                        bg: balance >= 0 ? C.purpleL : C.redL, accent: balance >= 0 ? C.purple : C.red, barPct: totalInc > 0 ? Math.max(0, balance / totalInc) : 0, barColor: balance >= 0 ? C.purple : C.red },
+      { title: 'Revenus annuels',    value: fmt(totalInc), sub: `${paidMonths.length} mois actifs`,                          bg: C.tealL,                           accent: C.teal,                       barPct: 1,                                                       barColor: C.teal   },
+      { title: 'Dépenses annuelles', value: fmt(totalExp), sub: totalInc > 0 ? `${Math.round((totalExp/totalInc)*100)} % des revenus` : '—', bg: C.redL,           accent: C.red,                        barPct: totalInc > 0 ? totalExp / totalInc : 0,                  barColor: C.red    },
+      { title: 'Épargne nette',      value: fmt(balance),  sub: `Taux d'épargne : ${saving} %`, bg: balance >= 0 ? C.purpleL : C.redL, accent: balance >= 0 ? C.purple : C.red, barPct: totalInc > 0 ? Math.max(0, balance / totalInc) : 0, barColor: balance >= 0 ? C.purple : C.red },
     ].forEach((c, i) => {
       const cx = M + i * (cardW + 10)
       fill(cx, cardY, cardW, cardH, c.bg, 8)
@@ -756,16 +735,14 @@ router.get('/export/annual/pdf', async (req, res) => {
     const statY = cardY + cardH + 18
     const statW = (PW - M * 2 - 20) / 2
     if (bestMonth) {
-      fill(M, statY, statW, 44, C.amberL, 6)
-      fill(M, statY, 4, 44, C.amber, 0)
+      fill(M, statY, statW, 44, C.amberL, 6); fill(M, statY, 4, 44, C.amber, 0)
       T('Meilleur mois', M + 14, statY + 8, { color: C.amber, bold: true, size: 8, w: statW - 20 })
       T(MONTHS_FR[bestMonth.month - 1], M + 14, statY + 20, { color: C.text, bold: true, size: 11, w: statW - 80 })
       T(`+${fmt(bestMonth.balance)}`, M + 14, statY + 20, { color: C.teal, bold: true, size: 11, w: statW - 20, align: 'right' })
     }
     if (worstMonth) {
       const wx = M + statW + 20
-      fill(wx, statY, statW, 44, C.redL, 6)
-      fill(wx, statY, 4, 44, C.red, 0)
+      fill(wx, statY, statW, 44, C.redL, 6); fill(wx, statY, 4, 44, C.red, 0)
       T('Mois le plus chargé', wx + 14, statY + 8, { color: C.red, bold: true, size: 8, w: statW - 20 })
       T(MONTHS_FR[worstMonth.month - 1], wx + 14, statY + 20, { color: C.text, bold: true, size: 11, w: statW - 80 })
       T(fmt(worstMonth.totalExpenses), wx + 14, statY + 20, { color: C.red, bold: true, size: 11, w: statW - 20, align: 'right' })
@@ -785,14 +762,12 @@ router.get('/export/annual/pdf', async (req, res) => {
       { label: 'Taux épargne', w: 72,  align: 'right' },
       { label: 'Répartition',  w: 81,  align: 'left'  },
     ]
-    fill(M, y, PW - M * 2, 20, C.rowAlt, 0)
-    hLine(y, C.border)
+    fill(M, y, PW - M * 2, 20, C.rowAlt, 0); hLine(y, C.border)
     let cx2 = M + 10
     cols.forEach(col => { T(col.label, cx2, y + 6, { color: C.muted, bold: true, size: 8, w: col.w, align: col.align }); cx2 += col.w })
     y += 20; hLine(y, C.border)
 
     const maxVal = Math.max(...months.map(m => Math.max(m.totalIncomes, m.totalExpenses)), 1)
-
     months.forEach((m, idx) => {
       if (y > 760) {
         doc.addPage(); y = M
@@ -804,9 +779,7 @@ router.get('/export/annual/pdf', async (req, res) => {
       const isEmpty = m.totalIncomes === 0 && m.totalExpenses === 0
       const sr      = m.totalIncomes > 0 ? Math.round((m.balance / m.totalIncomes) * 100) : 0
       const isPos   = m.balance >= 0
-
       fill(M, y, PW - M * 2, rowH, isEmpty ? '#FAFAFA' : idx % 2 === 0 ? C.rowAlt : C.white, 0)
-
       let rx = M + 10; const rowY = y + 7
       T(MONTHS_FR[m.month - 1], rx, rowY, { color: isEmpty ? C.muted : C.text, bold: !isEmpty, size: 9, w: cols[0].w }); rx += cols[0].w
       T(isEmpty ? '—' : fmt(m.totalIncomes),  rx, rowY, { color: isEmpty ? C.muted : C.teal,   size: 9, w: cols[1].w, align: 'right' }); rx += cols[1].w
@@ -831,25 +804,27 @@ router.get('/export/annual/pdf', async (req, res) => {
     T(`${balance >= 0 ? '+' : ''}${fmt(balance)}`, tx, y + 8, { color: balance >= 0 ? C.green : C.danger, bold: true, size: 10, w: cols[3].w, align: 'right' }); tx += cols[3].w
     T(`${saving} %`, tx, y + 8, { color: C.purple, bold: true, size: 10, w: cols[4].w, align: 'right' })
 
-    // SIGNATURE
-    y += 40
-    if (y + 72 > 810) { doc.addPage(); y = M }
-    drawSignature(doc, M, y, PW, M, currency, year, isTrial2)
+    // SIGNATURE (seulement si showSignature)
+    if (showSignature) {
+      y += 40
+      if (y + 72 > 810) { doc.addPage(); y = M }
+      drawSignature(doc, M, y, PW, M, currency, year, isTrial)
+    }
 
     // FOOTER
     doc.flushPages()
     const pageCount = doc.bufferedPageRange().count
     for (let i = 0; i < pageCount; i++) {
       doc.switchToPage(i)
-      if (isTrial2) drawWatermark(doc, PW, PH)
-      drawTrialBanner(doc, PW, isTrial2)
+      if (showSignature) drawWatermark(doc, PW, PH)
+      drawTrialBanner(doc, PW, showSignature)
       fill(0, PH - 28, PW, 28, C.purple)
       doc.fillColor('#AFA9EC').font('Helvetica').fontSize(7)
          .text(`Depenzo  ·  Bilan Annuel ${year}  ·  ${currency}  ·  Page ${i + 1} / ${pageCount}`,
            M, PH - 17, { width: PW - M * 2, align: 'center', lineBreak: false })
-      if (isTrial2) {
+      if (showSignature) {
         doc.fillColor('#7F77DD').font('Helvetica').fontSize(6)
-           .text('Rapport généré avec le plan Essai Gratuit Depenzo — depenzo.mg',
+           .text('Rapport généré avec Depenzo — depenzo.mg',
              M, PH - 8, { width: PW - M * 2, align: 'center', lineBreak: false })
       }
     }

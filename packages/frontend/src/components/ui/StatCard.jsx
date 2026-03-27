@@ -1,7 +1,7 @@
 export default function StatCard({ label, value, color, icon:Icon, sub }) {
   return (
     <div style={{ background:'#fff', borderRadius:16, padding:'14px 12px',
-      boxShadow:'0 1px 3px rgba(0,0,0,0.07)', flex:1, minWidth:0 }}>
+      boxShadow:'0 2px 12px rgba(108,92,231,0.08), 0 1px 3px rgba(0,0,0,0.06)', flex:1, minWidth:0 }}>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
         <div style={{ width:32, height:32, borderRadius:10,
           background: color + '22',

@@ -86,7 +86,7 @@ function RecurringCard({ r, onToggle, onEdit, onRemove, fmt, isEffectivelyActive
   return (
     <div style={{ background:'#fff', borderRadius:14, marginBottom:10, border:'0.5px solid #eee', opacity:r.isActive?1:0.55 }}>
       <div style={{ padding:'12px 14px' }}>
-        <div style={{ display:'flex', alignItems:'flex-start', gap:12 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:12 }}>
           <div style={{ width:40, height:40, borderRadius:12, flexShrink:0, background:color+'18', display:'flex', alignItems:'center', justifyContent:'center' }}>
             <LucideIcon name={r.category?.icon} size={18} color={color} strokeWidth={1.8}/>
           </div>
@@ -99,7 +99,7 @@ function RecurringCard({ r, onToggle, onEdit, onRemove, fmt, isEffectivelyActive
                 +{fmt(r.amount)}
               </span>
             </div>
-            <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginTop:5 }}>
+            <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginTop:0 }}>
               <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:20, background:'#E1F5EE', color:'#0F6E56' }}>
                 {FREQ_LABEL[r.frequency]}
               </span>

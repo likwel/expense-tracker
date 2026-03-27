@@ -34,9 +34,12 @@ async function convert(amount, fromCurrency, toCurrency) {
   }
   try {
     const rate = await getRate(fromCurrency, toCurrency)
-    return { amountInBase: Math.ceil(amount * rate), rate }
+    return {
+      amountInBase: Math.round(amount * rate * 100) / 100,  // ✅ 2 décimales, pas d'arrondi brutal
+      rate
+    }
   } catch (_) {
-    console.warn(`[currencyService] Conversion échouée ${fromCurrency}→${toCurrency}, montant brut conservé`)
+    console.warn(`[currencyService] Conversion échouée ${fromCurrency}→${toCurrency}`)
     return { amountInBase: amount, rate: 1 }
   }
 }

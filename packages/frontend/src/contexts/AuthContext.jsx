@@ -16,7 +16,7 @@ function loadUser() {
 }
 
 export function AuthProvider({ children }) {
-  const [user,       setUserState]  = useState(null)      // ✅ null par défaut, pas loadUser
+  const [user,       setUserState]  = useState(null)
   const [loading,    setLoading]    = useState(true)
   const [ratesReady, setRatesReady] = useState(false)
   const ratesFetchedFor = useRef(null)
@@ -34,21 +34,15 @@ export function AuthProvider({ children }) {
     const token = localStorage.getItem('token')
 
     if (!token) {
-      // Pas de token → nettoyer le localStorage au cas où
       saveUser(null)
       setLoading(false)
       setRatesReady(true)
       return
     }
 
-    // Token présent → valider avec le serveur
     authApi.me()
-      .then(r => {
-        // ✅ Token valide : mettre à jour user depuis le serveur (pas le localStorage)
-        setUser(r.data)
-      })
-      .catch(err => {
-        // ✅ Token invalide ou expiré : tout nettoyer
+      .then(r => setUser(r.data))
+      .catch(() => {
         localStorage.removeItem('token')
         saveUser(null)
         setUserState(null)
@@ -56,30 +50,24 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false))
   }, [])
 
-  // ── Charger les taux quand la devise de base change ───────────
+  // ── Charger les taux depuis MGA comme pivot (une seule fois) ──
   useEffect(() => {
-    const base = user?.defaultCurrency || 'MGA'
-    if (ratesFetchedFor.current === base) return
-    ratesFetchedFor.current = base
+    if (ratesFetchedFor.current === 'MGA') return
+    ratesFetchedFor.current = 'MGA'
 
-    fetch(`https://open.er-api.com/v6/latest/${base}`)
+    fetch('https://open.er-api.com/v6/latest/MGA')
       .then(r => r.json())
       .then(d => {
         if (!d.rates) return
-        if (base === 'MGA') {
-          setRates(d.rates)
-        } else {
-          const mgaRate  = d.rates['MGA'] || 1
-          const mgaRates = {}
-          Object.entries(d.rates).forEach(([code, rate]) => {
-            mgaRates[code] = rate / mgaRate
-          })
-          setRates(mgaRates)
-        }
+        // d.rates = { EUR: 0.000203, USD: 0.000222, ... }
+        // Signification : 1 MGA = X devise  ← pivot utilisé par convert() front
+        setRates(d.rates)
       })
-      .catch(() => {})
+      .catch(() => {
+        console.warn('[AuthContext] Impossible de charger les taux de change')
+      })
       .finally(() => setRatesReady(true))
-  }, [user?.defaultCurrency])
+  }, [])   // ← pas de dépendance sur defaultCurrency, le pivot est toujours MGA
 
   const login = async (credentials) => {
     const { data } = await authApi.login(credentials)
@@ -98,7 +86,7 @@ export function AuthProvider({ children }) {
   const logout = () => {
     localStorage.removeItem('token')
     localStorage.removeItem('activeOrgId')
-    localStorage.removeItem('user')          // ✅ effacer explicitement
+    localStorage.removeItem('user')
     resetNotifications()
     saveUser(null)
     setUserState(null)

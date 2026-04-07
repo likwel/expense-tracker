@@ -32,6 +32,7 @@ export default function Dashboard() {
   const { data: recurInc, refetch: refetchRecurInc  } = useApi('/recurring-income', orgParam)
   const { data: incData                             } = useApi('/incomes',          { ...PARAMS, take: 5 })
 
+  console.log('monthly data:', monthly)
   // ── Valeurs réelles backend ───────────────────────────────────
   const punctualExp = summary?.punctualExpenses || 0
   const recurringExp = summary?.recurringExpenses || 0

@@ -6,7 +6,7 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
-    allowedHosts: ['lavina-nongrieving-gabriella.ngrok-free.dev'],
+    allowedHosts: ['lavina-nongrieving-gabriella.ngrok-free.dev', 'www.depenzo.duckdns.org', 'depenzo.duckdns.org'],
     proxy: {
       '/api': {
         target:       'http://localhost:9995',

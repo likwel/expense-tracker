@@ -1,9 +1,9 @@
 // src/hooks/useApi.js
 import { useState, useEffect, useCallback, useRef } from 'react'
 import api from '../services/api'
-import { getEntry, isValid } from '../services/apiCache'
+import { getEntry, isValid, onDataChanged } from '../services/apiCache'
 
-export { invalidateCache, invalidateCachePrefix } from '../services/apiCache'
+export { invalidateCache, invalidateCachePrefix, notifyDataChanged } from '../services/apiCache'
 
 export function useApi(url, params = {}) {
   const paramsKey = JSON.stringify(params)
@@ -72,6 +72,14 @@ export function useApi(url, params = {}) {
       entry.listeners.delete(listener)
     }
   }, [cacheKey, doFetch])
+
+  // Rafraîchit automatiquement quand une action signale un changement sur cette URL
+  useEffect(() => {
+    if (!url) return
+    return onDataChanged(prefixes => {
+      if (prefixes.some(p => url.startsWith(p))) doFetch(true)
+    })
+  }, [url, doFetch])
 
   const refetch = useCallback(() => {
     if (cacheKey) getEntry(cacheKey).ts = 0

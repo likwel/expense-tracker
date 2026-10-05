@@ -1,8 +1,16 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 export default function MonthPicker({ month, setMonth, months }) {
   const scrollRef = useRef(null)
+
+  // Garde le mois sélectionné visible
+  useEffect(() => {
+    const el = scrollRef.current?.children[month - 1]
+    const box = scrollRef.current
+    if (!el || !box) return
+    box.scrollTo({ left: el.offsetLeft - box.offsetLeft - box.clientWidth / 2 + el.clientWidth / 2, behavior: 'smooth' })
+  }, [month])
 
   const scroll = (dir) => {
     scrollRef.current?.scrollBy({ left: dir * 100, behavior: 'smooth' })
@@ -12,7 +20,7 @@ export default function MonthPicker({ month, setMonth, months }) {
     <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 12 }}>
 
       {/* Flèche gauche */}
-      <button onClick={() => scroll(-1)} style={{
+      <button onClick={() => scroll(-1)} aria-label="Mois précédents" style={{
         flexShrink: 0, width: 30, height: 30, borderRadius: 10,
         border: 'none', background: '#f5f3ff', cursor: 'pointer',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -29,7 +37,7 @@ export default function MonthPicker({ month, setMonth, months }) {
         className="hide-scrollbar"
       >
         {months.map((m, i) => (
-          <button key={i} onClick={() => setMonth(i + 1)} style={{
+          <button key={i} onClick={() => setMonth(i + 1)} aria-pressed={month === i + 1} style={{
             flexShrink: 0, padding: '6px 14px', borderRadius: 20,
             border: 'none', cursor: 'pointer',
             fontWeight: 600, fontSize: 13, transition: 'all 0.15s',
@@ -43,7 +51,7 @@ export default function MonthPicker({ month, setMonth, months }) {
       </div>
 
       {/* Flèche droite */}
-      <button onClick={() => scroll(1)} style={{
+      <button onClick={() => scroll(1)} aria-label="Mois suivants" style={{
         flexShrink: 0, width: 30, height: 30, borderRadius: 10,
         border: 'none', background: '#f5f3ff', cursor: 'pointer',
         display: 'flex', alignItems: 'center', justifyContent: 'center',

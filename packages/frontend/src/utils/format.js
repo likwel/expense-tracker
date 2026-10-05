@@ -54,3 +54,10 @@ export const fmtDate = (d) => new Date(d).toLocaleDateString('fr-FR', { day:'2-d
 export const MONTHS_SM   = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']
 export const MONTHS_FULL = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre']
 export const MONTHS      = MONTHS_FULL
+// Date locale au format AAAA-MM-JJ (toISOString() renvoie la date UTC,
+// ce qui décale d'un jour selon le fuseau horaire)
+export const localISODate = (d = new Date()) => {
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+

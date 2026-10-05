@@ -235,19 +235,23 @@ export default function Header({ title }) {
 
   return (
     <div style={{
-      background: '#fff', padding: '10px 20px',
+      background: 'rgba(255,255,255,0.9)', padding: '10px clamp(16px, 3vw, 24px)',
+      backdropFilter: 'saturate(180%) blur(14px)', WebkitBackdropFilter: 'saturate(180%) blur(14px)',
       boxShadow: '0 1px 0 #eee', position: 'sticky', top: 0, zIndex: 10,
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
 
         {/* ── Logo + titre + date ── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Logo/>
-          <div style={{ width: 1, height: 28, background: '#eee' }}/>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 16, color: '#222', lineHeight: 1.2 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+          <div className="header-logo" style={{ alignItems: 'center', gap: 12 }}>
+            <Logo/>
+            <div style={{ width: 1, height: 28, background: '#eee' }}/>
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <h1 style={{ fontWeight: 800, fontSize: 'clamp(16px, 2.2vw, 20px)', color: '#222', lineHeight: 1.2,
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {title}
-            </div>
+            </h1>
             <div style={{ fontSize: 11, color: '#bbb', display: 'flex', alignItems: 'center', gap: 4, marginTop: 1 }}>
               <Calendar size={10}/>
               {MONTHS_FULL[now.getMonth()]} {now.getFullYear()}
@@ -256,14 +260,14 @@ export default function Header({ title }) {
         </div>
 
         {/* ── Actions droite ── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
 
           {/* ✅ Switcher organisation */}
           <OrgSwitcher/>
 
           {/* Cloche notifications */}
           <div style={{ position: 'relative' }} ref={notifRef}>
-            <button onClick={handleNotifOpen} style={{
+            <button onClick={handleNotifOpen} aria-label={`Notifications${unreadCount ? ` (${unreadCount} non lues)` : ''}`} aria-expanded={notifOpen} style={{
               width: 38, height: 38, borderRadius: 19,
               background: notifOpen ? '#6C5CE7' : '#f5f3ff',
               border: 'none', cursor: 'pointer',
@@ -288,11 +292,11 @@ export default function Header({ title }) {
             </button>
 
             {notifOpen && (
-              <div style={{
+              <div className="header-dropdown" style={{
                 position: 'absolute', top: 46, right: 0,
                 background: '#fff', borderRadius: 14,
                 boxShadow: '0 8px 32px rgba(0,0,0,0.13)',
-                width: 300, zIndex: 50, overflow: 'hidden',
+                width: 'min(340px, calc(100vw - 24px))', zIndex: 50, overflow: 'hidden',
               }}>
                 <div style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -404,7 +408,7 @@ export default function Header({ title }) {
 
           {/* Bouton menu */}
           <div style={{ position: 'relative' }} ref={menuRef}>
-            <button onClick={() => { setMenuOpen(v => !v); setNotifOpen(false) }} style={{
+            <button onClick={() => { setMenuOpen(v => !v); setNotifOpen(false) }} aria-label="Menu du compte" aria-expanded={menuOpen} style={{
               width: 38, height: 38, borderRadius: 19,
               background: menuOpen ? '#6C5CE7' : '#f5f3ff',
               border: 'none', cursor: 'pointer',
@@ -415,7 +419,7 @@ export default function Header({ title }) {
             </button>
 
             {menuOpen && (
-              <div style={{
+              <div className="header-dropdown" style={{
                 position: 'absolute', top: 46, right: 0,
                 background: '#fff', borderRadius: 14,
                 boxShadow: '0 8px 32px rgba(0,0,0,0.13)',
@@ -449,7 +453,7 @@ export default function Header({ title }) {
                   </button>
                 </div>
 
-                <div style={{ padding: '6px 8px', maxHeight: 250, overflowY: 'auto' }}>
+                <div style={{ padding: '6px 8px', maxHeight: 'min(420px, 60vh)', overflowY: 'auto' }}>
                   {MENU_ITEMS.map(({ icon: Icon, label, sub, to, color, bg }) => (
                     <button key={to} onClick={() => { navigate(to); setMenuOpen(false) }} style={{
                       display: 'flex', alignItems: 'center', gap: 12,

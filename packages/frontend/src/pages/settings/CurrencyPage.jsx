@@ -384,7 +384,7 @@ export default function CurrencyPage() {
 
       {/* Bouton sauvegarder — visible pour tous dès qu'une devise différente est sélectionnée */}
       {isChanged && (
-        <div style={{ position: 'fixed', bottom: 84, left: '50%',
+        <div className="bottom-bar" style={{ position: 'fixed', bottom: 84, left: '50%',
           transform: 'translateX(-50%)', width: 'calc(100% - 32px)', maxWidth: 448, zIndex: 20 }}>
           <button onClick={handleSave} disabled={saving} style={{
             width: '100%', padding: '14px', borderRadius: 14,

@@ -2,13 +2,15 @@ import { useState, useMemo } from 'react'
 import {
   Plus, Trash2, TrendingUp, RefreshCw, ToggleLeft, ToggleRight,
   Calendar, Clock, ChevronDown, ChevronUp, Pencil, X, CheckCircle,
-  Search, SlidersHorizontal,
+  Search, SlidersHorizontal, Download,
 } from 'lucide-react'
 import Header      from '../components/layout/Header'
 import Modal       from '../components/ui/Modal'
 import Input       from '../components/ui/Input'
 import MonthPicker from '../components/ui/MonthPicker'
-import { MONTHS }  from '../utils/format'
+import { MONTHS, localISODate }  from '../utils/format'
+import { downloadCSV, groupByDay, dayLabel } from '../utils/csv'
+import { useToast } from '../components/ui/Toast'
 import { useApi }  from '../hooks/useApi'
 import { incomesApi } from '../services/api'
 import api         from '../services/api'
@@ -29,7 +31,7 @@ const DTYPE_OPTIONS = ['all','working','holiday']
 const EMPTY_REC = {
   categoryId:'', amount:'', description:'', frequency:'monthly',
   dayOfMonth:'', dayOfWeek:'', dayType:'all',
-  startDate: now.toISOString().split('T')[0], endDate:'',
+  startDate: localISODate(now), endDate:'',
 }
 
 const S = {
@@ -37,6 +39,8 @@ const S = {
 }
 
 /* ─── Carte revenu ponctuel ─────────────────────────────────────── */
+const ICON_BTN = { width:30, height:30, borderRadius:8, background:'none', border:'none', cursor:'pointer', color:'#aaa', display:'flex', alignItems:'center', justifyContent:'center' }
+
 function PunctualCard({ i, onRemove, onEdit, fmt }) {
   const color = i.category?.color || '#00b894'
   return (
@@ -66,12 +70,12 @@ function PunctualCard({ i, onRemove, onEdit, fmt }) {
       </div>
       <div style={{ textAlign:'right', flexShrink:0 }}>
         <div style={{ fontWeight:700, fontSize:13, color:'#00b894', marginBottom:4 }}>+{fmt(i.amount)}</div>
-        <div style={{ display:'flex', gap:6, justifyContent:'flex-end' }}>
-          <button onClick={() => onEdit(i)} style={{ background:'none', border:'none', cursor:'pointer', color:'#bbb', padding:0 }}>
-            <Pencil size={13}/>
+        <div style={{ display:'flex', gap:2, justifyContent:'flex-end' }}>
+          <button onClick={() => onEdit(i)} aria-label="Modifier" title="Modifier" style={ICON_BTN}>
+            <Pencil size={14}/>
           </button>
-          <button onClick={() => onRemove(i.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#e0e0e0', padding:0 }}>
-            <Trash2 size={13}/>
+          <button onClick={() => onRemove(i.id)} aria-label="Supprimer" title="Supprimer" style={{ ...ICON_BTN, color:'#e8a5a5' }}>
+            <Trash2 size={14}/>
           </button>
         </div>
       </div>
@@ -163,6 +167,7 @@ function RecurringCard({ r, onToggle, onEdit, onRemove, fmt, isEffectivelyActive
 /* ─── Page principale ───────────────────────────────────────────── */
 export default function Incomes() {
   const { fmt }  = useFmt()
+  const toast    = useToast()
   const { user } = useAuth()
   const currency = user?.currency || 'MGA'
 
@@ -172,7 +177,7 @@ export default function Incomes() {
   const [modal,    setModal]    = useState(null)   // 'punctual' | 'recurring' | null
   const [editItem, setEditItem] = useState(null)
   const [recModal, setRecModal] = useState(null)
-  const [form,     setForm]     = useState({ categoryId:'', amount:'', description:'', date:now.toISOString().split('T')[0] })
+  const [form,     setForm]     = useState({ categoryId:'', amount:'', description:'', date:localISODate() })
   const [recForm,  setRecForm]  = useState(EMPTY_REC)
   const [saving,   setSaving]   = useState(false)
   const [genMsg,   setGenMsg]   = useState(null)
@@ -271,12 +276,12 @@ export default function Incomes() {
   /* ── Handlers ponctuel ── */
   const openCreatePunctual = () => {
     setEditItem(null)
-    setForm({ categoryId:'', amount:'', description:'', date:now.toISOString().split('T')[0] })
+    setForm({ categoryId:'', amount:'', description:'', date:localISODate() })
     setModal('punctual'); setFabOpen(false)
   }
   const openEditPunctual = (i) => {
     setEditItem(i)
-    setForm({ categoryId:String(i.categoryId||''), amount:String(i.amount), description:i.description||'', date:i.date?.split('T')[0]||now.toISOString().split('T')[0] })
+    setForm({ categoryId:String(i.categoryId||''), amount:String(i.amount), description:i.description||'', date:i.date?.split('T')[0]||localISODate() })
     setModal('punctual')
   }
   const savePunctual = async () => {
@@ -289,12 +294,25 @@ export default function Incomes() {
         await incomesApi.create({ ...form, amount:parseFloat(form.amount), categoryId:Number(form.categoryId)||null })
       }
       setModal(null); refetchInc()
-    } catch (e) { alert(e.response?.data?.error || 'Erreur') }
+      toast.success(editItem ? 'Revenu modifié' : 'Revenu enregistré')
+    } catch (e) { toast.error(e.response?.data?.error || 'Erreur') }
     finally { setSaving(false) }
   }
   const removeIncome = async (id) => {
     if (!confirm('Supprimer ce revenu ?')) return
-    await incomesApi.remove(id); refetchInc()
+    try { await incomesApi.remove(id); refetchInc(); toast.success('Revenu supprimé') }
+    catch (e) { toast.error(e.response?.data?.error || 'Suppression impossible') }
+  }
+
+  const exportCSV = () => {
+    downloadCSV(
+      `revenus-${year}-${String(month).padStart(2,'0')}.csv`,
+      ['Date', 'Catégorie', 'Description', 'Montant', 'Type'],
+      filteredPunctual.map(i => [
+        String(i.date).split('T')[0], i.category?.name || '', i.description || '',
+        Number(i.amount), i.isRecurring ? 'Récurrent' : 'Ponctuel',
+      ]),
+    )
   }
 
   /* ── Handlers récurrent ── */
@@ -314,7 +332,8 @@ export default function Incomes() {
         ? await api.put(`/recurring-income/${recModal.id}`, payload)
         : await api.post('/recurring-income', payload)
       setRecModal(null); refetchRec()
-    } catch (e) { alert(e.response?.data?.error || 'Erreur') }
+      toast.success(recModal?.id ? 'Récurrence modifiée' : 'Récurrence créée')
+    } catch (e) { toast.error(e.response?.data?.error || 'Erreur') }
     finally { setSaving(false) }
   }
   const toggleRec = async (id) => { await api.patch(`/recurring-income/${id}/toggle`); refetchRec() }
@@ -325,7 +344,7 @@ export default function Incomes() {
       const { data } = await api.post('/recurring-income/generate')
       setGenMsg(data); refetchInc(); refetchRec()
       setTimeout(() => setGenMsg(null), 5000)
-    } catch (e) { alert(e.response?.data?.error || 'Erreur') }
+    } catch (e) { toast.error(e.response?.data?.error || 'Erreur') }
   }
 
   const DaySelector = () => {
@@ -351,7 +370,7 @@ export default function Incomes() {
   return (
     <div style={{ paddingBottom:90 }}>
       <Header title="Revenus"/>
-      <div style={{ padding:'12px 16px' }}>
+      <div className="page-pad">
 
         <MonthPicker month={month} setMonth={setMonth} months={MONTHS}/>
 
@@ -465,17 +484,32 @@ export default function Incomes() {
                   Transactions
                   {filteredPunctual.length !== incomes.length && <span style={{ fontSize:11, color:'#aaa', fontWeight:400, marginLeft:6 }}>({filteredPunctual.length}/{incomes.length})</span>}
                 </span>
-                <span style={{ fontWeight:700, fontSize:14, color:'#00b894' }}>
-                  {fmt(filteredPunctual.reduce((s,i) => s+Number(i.amount), 0))}
-                </span>
+                <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                  <span style={{ fontWeight:700, fontSize:14, color:'#00b894' }}>
+                    {fmt(filteredPunctual.reduce((s,i) => s+Number(i.amount), 0))}
+                  </span>
+                  {filteredPunctual.length > 0 && (
+                    <button onClick={exportCSV} title="Exporter en CSV" aria-label="Exporter en CSV" style={{ width:30, height:30, borderRadius:9, border:'0.5px solid #eee', background:'#fafafa', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#888' }}>
+                      <Download size={14}/>
+                    </button>
+                  )}
+                </div>
               </div>
               {filteredPunctual.length === 0
                 ? <div style={{ textAlign:'center', color:'#ccc', padding:'32px 0', fontSize:13 }}>
                     <TrendingUp size={32} color="#e0e0e0" style={{ margin:'0 auto 8px', display:'block' }}/>
                     {search||filterCat ? 'Aucun résultat' : 'Aucun revenu ce mois'}
                   </div>
-                : filteredPunctual.map(i => (
-                  <PunctualCard key={i.id} i={i} onEdit={openEditPunctual} onRemove={removeIncome} fmt={fmt}/>
+                : groupByDay(filteredPunctual).map(g => (
+                  <div key={g.day}>
+                    <div style={{ display:'flex', justifyContent:'space-between', padding:'8px 14px', background:'#fbfbfd', fontSize:11, fontWeight:700, color:'#999', textTransform:'capitalize', borderBottom:'0.5px solid #f3f3f3' }}>
+                      <span>{dayLabel(g.day)}</span>
+                      <span style={{ color:'#00b894' }}>+{fmt(g.total)}</span>
+                    </div>
+                    {g.list.map(i => (
+                      <PunctualCard key={i.id} i={i} onEdit={openEditPunctual} onRemove={removeIncome} fmt={fmt}/>
+                    ))}
+                  </div>
                 ))
               }
             </div>
@@ -531,7 +565,7 @@ export default function Incomes() {
 
       {/* ── FAB avec menu ── */}
       {fabOpen && <div onClick={() => setFabOpen(false)} style={{ position:'fixed', inset:0, zIndex:14 }}/>}
-      <div style={{ position:'fixed', bottom:84, right:20, zIndex:15, display:'flex', flexDirection:'column', alignItems:'flex-end', gap:10 }}>
+      <div className="fab" style={{ position:'fixed', bottom:84, right:20, zIndex:15, display:'flex', flexDirection:'column', alignItems:'flex-end', gap:10 }}>
         {fabOpen && (
           <>
             <button onClick={openCreateRecurring} style={{ display:'flex', alignItems:'center', gap:8, padding:'9px 16px', borderRadius:24, border:'none', cursor:'pointer', background:'#6C5CE7', color:'#fff', fontWeight:700, fontSize:13, boxShadow:'0 3px 10px rgba(108,92,231,0.35)', whiteSpace:'nowrap' }}>

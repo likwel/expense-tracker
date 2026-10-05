@@ -1,26 +1,30 @@
+import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Layout             from './components/layout/Layout'
-import Dashboard          from './pages/Dashboard'
-import Expenses           from './pages/Expenses'
-import Incomes            from './pages/Incomes'
-import Budgets            from './pages/Budgets'
-import Reports            from './pages/Reports'
-import Recurring          from './pages/Recurring'
-import Login              from './pages/Login'
-import Register           from './pages/Register'
-import LandingPage        from './pages/LandingPage'
-import ProfilePage        from './pages/settings/ProfilePage'
-import SecurityPage       from './pages/settings/SecurityPage'
-import ThemePage          from './pages/settings/ThemePage'
-import CurrencyPage       from './pages/settings/CurrencyPage'
-import TermsPage          from './pages/TermsPage'
-import PrivacyPage        from './pages/PrivacyPage'
-import NotificationsPage  from './pages/NotificationsPage'
-import HelpPage           from './pages/HelpPage'
-import PlanPage           from './pages/settings/PlanPage'
-import AdminPage          from './pages/Admin'
 import { OrgProvider }    from './contexts/OrgContext'
+import { ToastProvider }  from './components/ui/Toast'
+
+// Pages chargées à la demande (bundle initial plus léger)
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const Expenses = lazy(() => import('./pages/Expenses'))
+const Incomes = lazy(() => import('./pages/Incomes'))
+const Budgets = lazy(() => import('./pages/Budgets'))
+const Reports = lazy(() => import('./pages/Reports'))
+const Recurring = lazy(() => import('./pages/Recurring'))
+const Login = lazy(() => import('./pages/Login'))
+const Register = lazy(() => import('./pages/Register'))
+const LandingPage = lazy(() => import('./pages/LandingPage'))
+const ProfilePage = lazy(() => import('./pages/settings/ProfilePage'))
+const SecurityPage = lazy(() => import('./pages/settings/SecurityPage'))
+const ThemePage = lazy(() => import('./pages/settings/ThemePage'))
+const CurrencyPage = lazy(() => import('./pages/settings/CurrencyPage'))
+const TermsPage = lazy(() => import('./pages/TermsPage'))
+const PrivacyPage = lazy(() => import('./pages/PrivacyPage'))
+const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
+const HelpPage = lazy(() => import('./pages/HelpPage'))
+const PlanPage = lazy(() => import('./pages/settings/PlanPage'))
+const AdminPage = lazy(() => import('./pages/Admin'))
 
 // ── Spinner partagé ───────────────────────────────────────────────
 function Spinner() {
@@ -31,7 +35,6 @@ function Spinner() {
         border: '3px solid #EEEDFE', borderTopColor: '#534AB7',
         animation: 'spin .7s linear infinite',
       }}/>
-      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </div>
   )
 }
@@ -66,6 +69,7 @@ function RootRedirect() {
 // ── Routes ────────────────────────────────────────────────────────
 function AppRoutes() {
   return (
+    <Suspense fallback={<Spinner/>}>
     <Routes>
 
       {/* Racine */}
@@ -102,6 +106,7 @@ function AppRoutes() {
       <Route path="*" element={<Navigate to="/" replace/>}/>
 
     </Routes>
+    </Suspense>
   )
 }
 
@@ -109,7 +114,9 @@ export default function App() {
   return (
     <AuthProvider>
       <OrgProvider>
-        <AppRoutes/>
+        <ToastProvider>
+          <AppRoutes/>
+        </ToastProvider>
       </OrgProvider>
     </AuthProvider>
   )

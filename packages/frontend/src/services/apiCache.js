@@ -23,3 +23,17 @@ export const invalidateCachePrefix = (prefix) => {
 export const clearCache = () => {
   Object.keys(cache).forEach(key => delete cache[key])
 }
+
+// ── Notification de changement de données ─────────────────────────
+// Permet à une action globale (ajout rapide…) de rafraîchir les écrans montés
+const changeListeners = new Set()
+
+export const onDataChanged = (fn) => {
+  changeListeners.add(fn)
+  return () => changeListeners.delete(fn)
+}
+
+export const notifyDataChanged = (prefixes) => {
+  prefixes.forEach(invalidateCachePrefix)
+  changeListeners.forEach(fn => fn(prefixes))
+}

@@ -12,6 +12,7 @@ import api from '../services/api'
 import { LucideIcon } from '../utils/iconResolver'
 import { useFmt } from '../hooks/useFmt'
 import { useAuth } from '../contexts/AuthContext'
+import { useToast } from '../components/ui/Toast'
 
 const FREQ_LABEL = { daily: 'Quotidien', weekly: 'Hebdomadaire', monthly: 'Mensuel' }
 const DTYPE_LABEL = { all: 'Tous les jours', working: 'Jours ouvrés', holiday: 'Jours fériés' }
@@ -149,6 +150,7 @@ export default function Recurring() {
   const [genMsg, setGenMsg] = useState(null)
   const [editId, setEditId] = useState(null)
   const { fmt } = useFmt()
+  const toast = useToast()
   const { user } = useAuth()
   const currency = user?.currency || 'MGA'
 
@@ -198,7 +200,7 @@ export default function Recurring() {
         : await api.post('/recurring', payload)
       setModal(false)
       refetch()
-    } catch (e) { alert(e.response?.data?.error || 'Erreur') }
+    } catch (e) { toast.error(e.response?.data?.error || 'Erreur') }
     finally { setSaving(false) }
   }
 
@@ -213,7 +215,7 @@ export default function Recurring() {
       const { data } = await api.post('/recurring/generate')
       setGenMsg(data); refetch()
       setTimeout(() => setGenMsg(null), 5000)
-    } catch (e) { alert(e.response?.data?.error || 'Erreur génération') }
+    } catch (e) { toast.error(e.response?.data?.error || 'Erreur génération') }
   }
 
   const DaySelector = () => {
@@ -247,7 +249,7 @@ export default function Recurring() {
   return (
     <div style={{ paddingBottom: 80 }}>
       <Header title="Dépenses récurrentes" />
-      <div style={{ padding: '12px 16px' }}>
+      <div className="page-pad">
 
         {/* Résumé */}
         {active.length > 0 && (
@@ -371,7 +373,7 @@ export default function Recurring() {
       </div>
 
       {/* FAB */}
-      <button onClick={openCreate} style={{
+      <button onClick={openCreate} className="fab" aria-label="Nouvelle récurrence" style={{
         position: 'fixed', bottom: 84, right: 20,
         width: 52, height: 52, borderRadius: 26,
         background: '#6C5CE7', border: 'none', color: '#fff', cursor: 'pointer',

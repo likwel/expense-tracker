@@ -2,13 +2,15 @@ import { useState, useMemo } from 'react'
 import {
   Plus, Trash2, TrendingDown, Search, SlidersHorizontal, X,
   Pencil, RefreshCw, ToggleLeft, ToggleRight, Calendar,
-  AlertTriangle, CheckCircle, Clock, ChevronDown,
+  AlertTriangle, CheckCircle, Clock, ChevronDown, Download,
 } from 'lucide-react'
 import Header      from '../components/layout/Header'
 import Modal       from '../components/ui/Modal'
 import Input       from '../components/ui/Input'
 import MonthPicker from '../components/ui/MonthPicker'
-import { MONTHS }  from '../utils/format'
+import { MONTHS, localISODate }  from '../utils/format'
+import { downloadCSV, groupByDay, dayLabel } from '../utils/csv'
+import { useToast } from '../components/ui/Toast'
 import { useApi }  from '../hooks/useApi'
 import { expensesApi } from '../services/api'
 import api         from '../services/api'
@@ -29,12 +31,12 @@ const DTYPE_OPTIONS = ['all','working','holiday']
 
 const EMPTY_PUNCTUAL = {
   categoryId:'', amount:'', description:'',
-  date: now.toISOString().split('T')[0],
+  date: localISODate(now),
 }
 const EMPTY_RECURRING = {
   categoryId:'', amount:'', description:'', frequency:'monthly',
   dayOfMonth:'', dayOfWeek:'', dayType:'all',
-  startDate: now.toISOString().split('T')[0], endDate:'',
+  startDate: localISODate(now), endDate:'',
 }
 
 const S = {
@@ -42,6 +44,8 @@ const S = {
   muted: { fontSize:11, color:'#aaa' },
   label: { fontSize:12, fontWeight:700, color:'#888', textTransform:'uppercase', letterSpacing:'0.4px', display:'block', marginBottom:8 },
 }
+
+const ICON_BTN = { width:30, height:30, borderRadius:8, background:'none', border:'none', cursor:'pointer', color:'#aaa', display:'flex', alignItems:'center', justifyContent:'center' }
 
 /* ─── Carte transaction ponctuelle ──────────────────────────────── */
 function PunctualCard({ e, onEdit, onRemove, fmt }) {
@@ -68,13 +72,13 @@ function PunctualCard({ e, onEdit, onRemove, fmt }) {
         </div>
       </div>
       <div style={{ textAlign:'right', flexShrink:0 }}>
-        <div style={{ fontWeight:700, fontSize:13, color:'#E24B4A', marginBottom:4 }}>-{fmt(e.amount)}</div>
-        <div style={{ display:'flex', gap:6, justifyContent:'flex-end' }}>
-          <button onClick={() => onEdit(e)} style={{ background:'none', border:'none', cursor:'pointer', color:'#bbb', padding:0 }}>
-            <Pencil size={13}/>
+        <div style={{ fontWeight:700, fontSize:13, color:'#E24B4A', marginBottom:2 }}>-{fmt(e.amount)}</div>
+        <div style={{ display:'flex', gap:2, justifyContent:'flex-end' }}>
+          <button onClick={() => onEdit(e)} aria-label="Modifier" title="Modifier" style={ICON_BTN}>
+            <Pencil size={14}/>
           </button>
-          <button onClick={() => onRemove(e.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#e0e0e0', padding:0 }}>
-            <Trash2 size={13}/>
+          <button onClick={() => onRemove(e.id)} aria-label="Supprimer" title="Supprimer" style={{ ...ICON_BTN, color:'#e8a5a5' }}>
+            <Trash2 size={14}/>
           </button>
         </div>
       </div>
@@ -289,6 +293,7 @@ function RecurringModal({ form, setForm, expCats, saving, onSave, onClose, editI
 export default function Expenses() {
   const { fmt }  = useFmt()
   const { user } = useAuth()
+  const toast    = useToast()
   const currency = user?.currency || 'MGA'
 
   // Navigation
@@ -381,6 +386,8 @@ export default function Expenses() {
 
   const totalActive = estimateAmount(activeRec, mStart, mEnd)
   const recurring   = totalActive
+  // Les récurrents générés sont déjà inclus dans l'estimation → ne pas les compter deux fois
+  const monthTotal  = punctual + recurring
 
   const filtered = useMemo(() => expenses.filter(e => {
     const matchSearch = !search || (e.description||e.category?.name||'').toLowerCase().includes(search.toLowerCase())
@@ -394,6 +401,17 @@ export default function Expenses() {
     return Object.entries(map).sort((a,b) => b[1]-a[1]).slice(0,4)
   }, [expenses])
 
+  const exportCSV = () => {
+    downloadCSV(
+      `depenses-${year}-${String(month).padStart(2,'0')}.csv`,
+      ['Date', 'Catégorie', 'Description', 'Montant', 'Type'],
+      filtered.map(e => [
+        String(e.date).split('T')[0], e.category?.name || '', e.description || '',
+        Number(e.amount), e.isRecurring ? 'Récurrent' : 'Ponctuel',
+      ]),
+    )
+  }
+
   // ── Handlers ponctuel ─────────────────────────────────────────
   const openCreatePunctual = () => {
     setEditItem(null)
@@ -403,7 +421,7 @@ export default function Expenses() {
   }
   const openEditPunctual = (e) => {
     setEditItem(e)
-    setPunctualForm({ categoryId:String(e.categoryId||''), amount:String(e.amount), description:e.description||'', date:e.date?.split('T')[0]||now.toISOString().split('T')[0] })
+    setPunctualForm({ categoryId:String(e.categoryId||''), amount:String(e.amount), description:e.description||'', date:e.date?.split('T')[0]||localISODate() })
     setModalType('punctual')
   }
   const savePunctual = async () => {
@@ -416,12 +434,14 @@ export default function Expenses() {
         await expensesApi.create({ ...punctualForm, amount:parseFloat(punctualForm.amount), categoryId:Number(punctualForm.categoryId)||null })
       }
       setModalType(null); refetchExp()
-    } catch (e) { alert(e.response?.data?.error || 'Erreur') }
+      toast.success(editItem ? 'Dépense modifiée' : 'Dépense enregistrée')
+    } catch (e) { toast.error(e.response?.data?.error || 'Erreur') }
     finally { setSaving(false) }
   }
   const removePunctual = async (id) => {
     if (!confirm('Supprimer cette dépense ?')) return
-    await expensesApi.remove(id); refetchExp()
+    try { await expensesApi.remove(id); refetchExp(); toast.success('Dépense supprimée') }
+    catch (e) { toast.error(e.response?.data?.error || 'Suppression impossible') }
   }
 
   // ── Handlers récurrent ────────────────────────────────────────
@@ -443,7 +463,8 @@ export default function Expenses() {
       const payload = { ...recurringForm, amount:parseFloat(recurringForm.amount), categoryId:Number(recurringForm.categoryId)||null, dayOfMonth:recurringForm.dayOfMonth!=='' ? Number(recurringForm.dayOfMonth) : null, dayOfWeek:recurringForm.dayOfWeek!=='' ? Number(recurringForm.dayOfWeek) : null, endDate:recurringForm.endDate||null }
       editId ? await api.put(`/recurring/${editId}`, payload) : await api.post('/recurring', payload)
       setModalType(null); refetchRec()
-    } catch (e) { alert(e.response?.data?.error || 'Erreur') }
+      toast.success(editId ? 'Récurrence modifiée' : 'Récurrence créée')
+    } catch (e) { toast.error(e.response?.data?.error || 'Erreur') }
     finally { setSaving(false) }
   }
   const toggleRecurring = async (id) => { await api.patch(`/recurring/${id}/toggle`); refetchRec() }
@@ -453,13 +474,13 @@ export default function Expenses() {
       const { data } = await api.post('/recurring/generate')
       setGenMsg(data); refetchRec()
       setTimeout(() => setGenMsg(null), 5000)
-    } catch (e) { alert(e.response?.data?.error || 'Erreur génération') }
+    } catch (e) { toast.error(e.response?.data?.error || 'Erreur génération') }
   }
 
   return (
     <div style={{ paddingBottom:80 }}>
       <Header title="Dépenses"/>
-      <div style={{ padding:'12px 16px' }}>
+      <div className="page-pad">
 
         <MonthPicker month={month} setMonth={setMonth} months={MONTHS}/>
 
@@ -471,7 +492,7 @@ export default function Expenses() {
                 Total {MONTHS[month - 1]}
               </div>
               <div style={{ fontWeight:800, fontSize:26, color:'#E24B4A', lineHeight:1 }}>
-                {fmt(totalExp + recurring)}
+                {fmt(monthTotal)}
               </div>
             </div>
             <div style={{ width:40, height:40, borderRadius:12, background:'#FCEBEB', display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -479,10 +500,10 @@ export default function Expenses() {
             </div>
           </div>
 
-          {totalExp > 0 && (
+          {monthTotal > 0 && (
             <div style={{ height:5, borderRadius:3, background:'#f0f0f0', overflow:'hidden', display:'flex', marginBottom:10 }}>
-              <div style={{ width:`${Math.round((punctual/totalExp)*100)}%`, background:'#E24B4A', transition:'width 0.4s' }}/>
-              <div style={{ width:`${Math.round((recurring/totalExp)*100)}%`, background:'#AFA9EC', transition:'width 0.4s' }}/>
+              <div style={{ width:`${Math.round((punctual/monthTotal)*100)}%`, background:'#E24B4A', transition:'width 0.4s' }}/>
+              <div style={{ width:`${Math.round((recurring/monthTotal)*100)}%`, background:'#AFA9EC', transition:'width 0.4s' }}/>
             </div>
           )}
 
@@ -579,14 +600,38 @@ export default function Expenses() {
                   Transactions
                   {filtered.length !== expenses.length && <span style={{ fontSize:11, color:'#aaa', fontWeight:400, marginLeft:6 }}>({filtered.length}/{expenses.length})</span>}
                 </span>
-                <span style={{ fontWeight:700, fontSize:14, color:'#E24B4A' }}>
-                  {fmt(filtered.reduce((s,e) => s+Number(e.amount), 0))}
-                </span>
+                <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                  <span style={{ fontWeight:700, fontSize:14, color:'#E24B4A' }}>
+                    {fmt(filtered.reduce((s,e) => s+Number(e.amount), 0))}
+                  </span>
+                  {filtered.length > 0 && (
+                    <button onClick={exportCSV} title="Exporter en CSV" aria-label="Exporter en CSV" style={{ width:30, height:30, borderRadius:9, border:'0.5px solid #eee', background:'#fafafa', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#888' }}>
+                      <Download size={14}/>
+                    </button>
+                  )}
+                </div>
               </div>
               {filtered.length === 0
-                ? <div style={{ textAlign:'center', color:'#ccc', padding:'32px 0', fontSize:13 }}>{search||filterCat ? 'Aucun résultat' : 'Aucune dépense ce mois'}</div>
-                : filtered.map(e => (
-                  <PunctualCard key={e.id} e={e} onEdit={openEditPunctual} onRemove={removePunctual} fmt={fmt}/>
+                ? <div style={{ textAlign:'center', color:'#bbb', padding:'32px 0', fontSize:13 }}>
+                    {search||filterCat ? 'Aucun résultat pour ce filtre' : 'Aucune dépense ce mois'}
+                    {!search && !filterCat && (
+                      <div style={{ marginTop:10 }}>
+                        <button onClick={openCreatePunctual} style={{ padding:'8px 14px', borderRadius:10, border:'none', background:'#FCEBEB', color:'#E24B4A', fontWeight:700, fontSize:12, cursor:'pointer' }}>
+                          + Ajouter une dépense
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                : groupByDay(filtered).map(g => (
+                  <div key={g.day}>
+                    <div style={{ display:'flex', justifyContent:'space-between', padding:'8px 14px', background:'#fbfbfd', fontSize:11, fontWeight:700, color:'#999', textTransform:'capitalize', borderBottom:'0.5px solid #f3f3f3' }}>
+                      <span>{dayLabel(g.day)}</span>
+                      <span style={{ color:'#E24B4A' }}>-{fmt(g.total)}</span>
+                    </div>
+                    {g.list.map(e => (
+                      <PunctualCard key={e.id} e={e} onEdit={openEditPunctual} onRemove={removePunctual} fmt={fmt}/>
+                    ))}
+                  </div>
                 ))
               }
             </div>
@@ -658,7 +703,7 @@ export default function Expenses() {
       {fabOpen && (
         <div onClick={() => setFabOpen(false)} style={{ position:'fixed', inset:0, zIndex:14 }}/>
       )}
-      <div style={{ position:'fixed', bottom:84, right:20, zIndex:15, display:'flex', flexDirection:'column', alignItems:'flex-end', gap:10 }}>
+      <div className="fab" style={{ position:'fixed', bottom:84, right:20, zIndex:15, display:'flex', flexDirection:'column', alignItems:'flex-end', gap:10 }}>
         {fabOpen && (
           <>
             <button onClick={openCreateRecurring} style={{ display:'flex', alignItems:'center', gap:8, padding:'9px 16px', borderRadius:24, border:'none', cursor:'pointer', background:'#6C5CE7', color:'#fff', fontWeight:700, fontSize:13, boxShadow:'0 3px 10px rgba(108,92,231,0.35)', whiteSpace:'nowrap' }}>
@@ -669,7 +714,7 @@ export default function Expenses() {
             </button>
           </>
         )}
-        <button onClick={() => setFabOpen(v => !v)} style={{ width:52, height:52, borderRadius:26, background: fabOpen ? '#555' : '#E24B4A', border:'none', color:'#fff', cursor:'pointer', boxShadow:'0 4px 14px rgba(226,75,74,0.40)', display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.2s' }}>
+        <button onClick={() => setFabOpen(v => !v)} aria-label={fabOpen ? 'Fermer' : 'Ajouter une dépense'} aria-expanded={fabOpen} style={{ width:52, height:52, borderRadius:26, background: fabOpen ? '#555' : '#E24B4A', border:'none', color:'#fff', cursor:'pointer', boxShadow:'0 4px 14px rgba(226,75,74,0.40)', display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.2s' }}>
           {fabOpen ? <X size={22} strokeWidth={2.5}/> : <Plus size={24} strokeWidth={2.5}/>}
         </button>
       </div>

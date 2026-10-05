@@ -16,6 +16,7 @@ import { LucideIcon } from '../utils/iconResolver'
 import { useFmt }  from '../hooks/useFmt'
 import { useAuth } from '../contexts/AuthContext'
 import { useOrg } from '../contexts/OrgContext'
+import { useToast } from '../components/ui/Toast'
 
 const now = new Date()
 
@@ -210,6 +211,7 @@ export default function Budgets() {
   const { activeOrg } = useOrg()
   
   const { fmt }  = useFmt()
+  const toast    = useToast()
   const { user } = useAuth()
   const currency = user?.currency || 'MGA'
 
@@ -297,7 +299,7 @@ export default function Budgets() {
         ? await api.put(`/budgets/${editItem.id}`, { amount:parseFloat(form.amount) })
         : await budgetsApi.create({ categoryId:Number(form.categoryId), amount:parseFloat(form.amount), month, year })
       setModal(false); refetch()
-    } catch (e) { alert(e.response?.data?.error || 'Erreur') }
+    } catch (e) { toast.error(e.response?.data?.error || 'Erreur') }
     finally { setSaving(false) }
   }
 
@@ -313,7 +315,7 @@ export default function Budgets() {
   return (
     <div style={{ paddingBottom:90 }}>
       <Header title="Budget"/>
-      <div style={{ padding:'12px 16px' }}>
+      <div className="page-pad">
 
         <MonthPicker month={month} setMonth={setMonth} months={MONTHS}/>
 
@@ -514,7 +516,7 @@ export default function Budgets() {
       </div>
 
       {/* FAB */}
-      <button onClick={openCreate} style={{ position:'fixed', bottom:84, right:20, width:52, height:52, borderRadius:26, background:'#6C5CE7', border:'none', color:'#fff', cursor:'pointer', boxShadow:'0 4px 14px rgba(108,92,231,0.45)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:15 }}>
+      <button onClick={openCreate} className="fab" aria-label="Nouveau budget" style={{ position:'fixed', bottom:84, right:20, width:52, height:52, borderRadius:26, background:'#6C5CE7', border:'none', color:'#fff', cursor:'pointer', boxShadow:'0 4px 14px rgba(108,92,231,0.45)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:15 }}>
         <Plus size={24} strokeWidth={2.5}/>
       </button>
 

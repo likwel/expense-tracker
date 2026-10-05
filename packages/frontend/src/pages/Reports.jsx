@@ -10,6 +10,7 @@ import MonthPicker     from '../components/ui/MonthPicker'
 import { useFmt }      from '../hooks/useFmt'
 import { usePlan }     from '../hooks/usePlan'
 import { useNavigate } from 'react-router-dom'
+import { useToast } from '../components/ui/Toast'
 import { useOrg }      from '../contexts/OrgContext'
 
 const now = new Date()
@@ -189,6 +190,7 @@ export default function Reports() {
   const [year]                  = useState(now.getFullYear())
   const [proModal, setProModal] = useState(null)
   const { fmt }     = useFmt()
+  const toast       = useToast()
   const {
     plan,
     isTrial,
@@ -282,7 +284,7 @@ export default function Reports() {
       const r = await reportsApi.pdf(params)
       const label = activeOrg ? `org${activeOrg.id}-` : ''
       download(r.data, `rapport-${label}${year}-${String(month).padStart(2, '0')}.pdf`)
-    } catch { alert('Erreur export PDF') }
+    } catch { toast.error('Erreur export PDF') }
   }
 
   const exportExcel = async () => {
@@ -290,7 +292,7 @@ export default function Reports() {
       const r = await reportsApi.excel({ month, year, ...orgParam })
       const label = activeOrg ? `org${activeOrg.id}-` : ''
       download(r.data, `rapport-${label}${year}-${String(month).padStart(2, '0')}.xlsx`)
-    } catch { alert('Erreur export Excel') }
+    } catch { toast.error('Erreur export Excel') }
   }
 
   const exportAnnual = async () => {
@@ -298,7 +300,7 @@ export default function Reports() {
       const r = await reportsApi.annualPdf({ year, ...orgParam })
       const label = activeOrg ? `org${activeOrg.id}-` : ''
       download(r.data, `rapport-annuel-${label}${year}.pdf`)
-    } catch (e) { console.error(e); alert('Erreur export rapport annuel') }
+    } catch (e) { console.error(e); toast.error('Erreur export rapport annuel') }
   }
 
   return (
@@ -306,7 +308,7 @@ export default function Reports() {
       {proModal && <ProModal feature={proModal} onClose={() => setProModal(null)}/>}
       <Header title="Rapports"/>
 
-      <div style={{ padding: '12px 16px' }}>
+      <div className="page-pad">
 
         {/* Sélecteur de mois */}
         <MonthPicker month={month} setMonth={setMonth} months={MONTHS}/>
